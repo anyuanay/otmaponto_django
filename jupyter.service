@@ -4,9 +4,13 @@ Description=Jupyter Notebook
 [Service]
 Type=simple
 PIDFile=/run/jupyter.pid
-ExecStart=/home/ubuntu/anaconda3/bin/jupyter-notebook --config=/home/ubuntu/.jupyter/jupyter_notebook_config.py --notebook-dir=/home/ubuntu --no-browser
+#ExecStart=/home/ubuntu/anaconda3/bin/jupyter-notebook --config=/home/ubuntu/.jupyter/jupyter_notebook_config.py --notebook-dir=/home/ubuntu --no-browser
+#ExecStart=/bin/bash -f "source /home/ubuntu/anaconda3/bin/activate; jupyter-notebook --notebook-dir=/home/ubuntu --no-browser"
 User=ubuntu
 Group=ubuntu
+
+ExecStart=/home/ubuntu/django/bin/jupyter_start
+
 Restart=always
 RestartSec=10
 

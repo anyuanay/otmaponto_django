@@ -1,0 +1,25 @@
+#!/bin/bash
+
+#  Anaconda3  dir
+ANACONDADIR=/home/ubuntu/anaconda3/bin
+
+# the user to run as
+USER=ubuntu
+
+# the group to run as
+GROUP=ubuntu
+
+echo "Starting $NAME as `whoami`"
+
+# Activate the virtual environment
+
+source /home/ubuntu/anaconda3/bin/activate
+
+export PYTHONPATH=$ANACONDADIR:$PYTHONPATH
+
+# Start  jupyter notebook
+
+exec /home/ubuntu/anaconda3/bin/jupyter-notebook \
+--config=/home/ubuntu/.jupyter/jupyter_notebook_config.py \
+--notebook-dir=/home/ubuntu \
+--no-browser
