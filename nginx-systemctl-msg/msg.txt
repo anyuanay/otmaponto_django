@@ -1,0 +1,22 @@
+● nginx.service - A high performance web server and a reverse proxy server
+     Loaded: loaded (/lib/systemd/system/nginx.service; enabled; vendor preset: enabled)
+     Active: active (running) since Sun 2021-08-15 16:43:37 EDT; 20s ago
+       Docs: man:nginx(8)
+    Process: 78907 ExecStartPre=/usr/sbin/nginx -t -q -g daemon on; master_process on; (code=exited, status=0/SUCCESS)
+    Process: 78908 ExecStart=/usr/sbin/nginx -g daemon on; master_process on; (code=exited, status=0/SUCCESS)
+   Main PID: 78909 (nginx)
+      Tasks: 9 (limit: 76215)
+     Memory: 8.7M
+     CGroup: /system.slice/nginx.service
+             ├─78909 nginx: master process /usr/sbin/nginx -g daemon on; master_process on;
+             ├─78910 nginx: worker process
+             ├─78911 nginx: worker process
+             ├─78912 nginx: worker process
+             ├─78913 nginx: worker process
+             ├─78914 nginx: worker process
+             ├─78915 nginx: worker process
+             ├─78916 nginx: worker process
+             └─78917 nginx: worker process
+
+Aug 15 16:43:37 ip-172-31-71-194 systemd[1]: Starting A high performance web server and a reverse proxy server...
+Aug 15 16:43:37 ip-172-31-71-194 systemd[1]: Started A high performance web server and a reverse proxy server.

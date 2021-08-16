@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# Name of the application
+#NAME="hello_app"
+NAME="otmaponto_app"
+
+# Django project directory
+#DJANGODIR=/home/ubuntu/django/hello
+DJANGODIR=/home/ubuntu/django/otmaponto
+
+
+# we will communicte using this unix socket
+SOCKFILE=/home/ubuntu/django/run/gunicorn.sock
+
+# the user to run as
+USER=ubuntu
+
+# the group to run as
+GROUP=ubuntu
+
+# how many worker processes should Gunicorn spawn
+NUM_WORKERS=3
+TIMEOUT=0
+
+# which settings file should Django use
+#DJANGO_SETTINGS_MODULE=hello.settings
+DJANGO_SETTINGS_MODULE=otmaponto.settings
+
+
+# WSGI module name
+#DJANGO_WSGI_MODULE=hello.wsgi
+DJANGO_WSGI_MODULE=otmaponto.wsgi
+
+echo "Starting $NAME as `whoami`"
+
+# Activate the virtual environment
+cd $DJANGODIR
+
+source /home/ubuntu/anaconda3/bin/activate
+
+export DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE
+export PYTHONPATH=$DJANGODIR:$PYTHONPATH
+
+# Create the run directory if it doesn't exist
+RUNDIR=$(dirname $SOCKFILE)
+
+test -d $RUNDIR || mkdir -p $RUNDIR
+
+# Start your Django Unicorn
+# Programs meant to be run under supervisor should not daemonize themselves (do not use --daemon)
+
+exec /home/ubuntu/anaconda3/bin/gunicorn ${DJANGO_WSGI_MODULE}:application \
+--name $NAME \
+--workers $NUM_WORKERS \
+--timeout $TIMEOUT \
+--user=$USER --group=$GROUP \
+--bind=unix:$SOCKFILE \
+--log-level=debug \
+--log-file=-

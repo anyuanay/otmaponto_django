@@ -1,0 +1,67 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
+    <title>Run the OTMapOnto Matcher</title>
+  </head>
+  <body class="bg-light">
+    <div class="container">
+      <div class="py-5 text-center">
+        <img class="d-block mx-auto mb-4" src= {% static 'match/images/CCILogo.png' %} alt="" width="300">
+        <h2>Run the OTMapOnto Ontology Matcher</h2>
+        <p class="lead">Choose and Upload Two Ontologies as Files and Run the Matcher.</p>
+      </div>
+
+      <div class="row">
+        <div class="col-md-12">
+          <h4>Upload via File</h4>
+        </div>
+      </div>
+      <form id="runViaFile" method="post" action="runmatcher" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="row">
+          <div class="col-md-5">
+            <!--
+            <span class="form-label">{{form.sourceFile.label_tag}}</span>
+            <span class="form-control">{{form.source}}</span>
+            -->
+            
+            <label for="sourceFile" class="form-label">Select source ontology OWL file</label>
+            <input class="form-control" type="file" id="source" name="source">
+            
+          </div>
+                
+          <div class="col-md-5">
+            <!--
+            <span class="form-label">{{form.targetFile.label_tag}}</span>
+            <span class="form-control">{{form.target}}</span>
+            -->
+            
+            <label for="targetFile" class="form-label">Select target ontology OWL file</label>
+            <input class="form-control" type="file" id="target" name="target">
+            
+          </div>
+                
+          <div class="col-md-2 d-flex"><!--offset-md-1-->
+            <button id="btn-file-match" class="btn btn-primary form-control align-self-end" type="submit">Run Matcher</button>
+          </div>
+        </div>
+      </form>
+        
+      
+      <footer class="my-5 pt-5 text-muted text-center text-small">
+        <p class="mb-1">&copy; CCI MRC</p>
+        <ul class="list-inline">
+          <li class="list-inline-item"><a href="http://www.drexel.edu">Drexe University</a></li>
+          <li class="list-inline-item"><a href="http://www.cci.drexel.edu">CCI</a></li>
+          <li class="list-inline-item"><a href="https://cci.drexel.edu/mrc/">Metadata Research Center</a></li>
+        </ul>
+      </footer>
+    </div>
+    <!-- Optional JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/js/bootstrap.bundle.min.js" integrity="sha384-gtEjrD/SeCtmISkJkNUaaKMoLD0//ElJ19smozuHV6z3Iehds+3Ulb9Bn9Plx0x4" crossorigin="anonymous"></script>
+  </body>
+</html>
