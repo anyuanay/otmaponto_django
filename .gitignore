@@ -1,5 +1,7 @@
 .ipynb_checkpoints
 
+systemctl-msg/*
+
 otmaponto/media/*
 
 otmaponto/match/ontology_mapping/model/crawl-300d-2M-subword.bin

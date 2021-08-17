@@ -1,5 +1,0 @@
-● jupyter.service - Jupyter Notebook
-     Loaded: loaded (/etc/systemd/system/jupyter.service; enabled; vendor preset: enabled)
-     Active: activating (auto-restart) (Result: exit-code) since Mon 2021-08-16 10:32:16 EDT; 817ms ago
-    Process: 84189 ExecStart=/bin/bash -f source /home/ubuntu/anaconda3/bin/activate; jupyter-notebook --notebook-dir=/home/ubuntu --no-browser (code=exited, status=127)
-   Main PID: 84189 (code=exited, status=127)
