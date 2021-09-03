@@ -7,8 +7,25 @@ tool, OTMaponto, participating in OAEI 2021. The tool is wrapped as a Web servic
 * user account: ubuntu
 * Installation path: /home/ubuntu/django
 
-**step 1**: clone this repository under /home/ubuntu
+**step 1**: Install anaconda3 under /home/ubuntu.
 
-**step 2**: rename the clone folder name to "django" from "otmaponto_django"
+**step 2**: Clone this repository under /home/ubuntu.
 
-**step 2**
+**step 3**: Rename the cloned folder name from "otmaponto_django" to "django".
+
+**step 4**: Change directory to /home/ubuntu/django by "cd ~/django".
+
+**step 5**: Run "conda activate".
+
+**step 6**: Install the required Python packages in requirements.txt by "pip install -r requirements.txt".
+
+**step 7**: Download the fasttext pre-trained model: crawl-300d-2M-subword.zip, 2 million word vectors trained with subword information on Common Crawl (600B tokens) from 
+https://dl.fbaipublicfiles.com/fasttext/vectors-english/crawl-300d-2M-subword.zip under /home/ubuntu/django/otmaponto/match/ontology_mapping/model/ .
+
+**step 8**: Run 'sudo cp gunicorn.service /etc/systemd/system/' 
+
+**step 9**: Run 'sudo systemctl enable gunicorn.service'
+
+**step 10**: Run 'sudo systemctl start gunicorn.service'
+
+
