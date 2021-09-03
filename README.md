@@ -26,6 +26,22 @@ https://dl.fbaipublicfiles.com/fasttext/vectors-english/crawl-300d-2M-subword.zi
 
 **step 9**: Run 'sudo systemctl enable gunicorn.service'
 
-**step 10**: Run 'sudo systemctl start gunicorn.service'
+**step 10**: Run 'sudo systemctl start gunicorn.service' Since the matching application needs to load the fasttext pre-trained model, the gunicorn service may take about 10-15 mins to be ready.
+
+**step 11**: Install nginx by 'sudo install nginx'.
+
+**step 12**: Run 'sudo cp etc.nginx.sites-available.otmaponto /etc/nginx/sites-available/otmaponto'
+
+**step 13**: Delete the default nginx app by 'sudo rm /etc/nginx/sites-enabled/default'
+
+**step 14**: Run 'sudo ln -s /etc/nginx/sites-available/otmaponto /etc/nginx/sites-enabled/'
+
+**step 15**: Create a 'logs' subfolder under ~/django by 'mkdir logs'
+
+**step 16**: Start nginx server by 'sudo systemctl start nginx'
+
+**step 17**: Access the matching from a browser: http://<your ip>/match
+  
+**step 18**: Web service endpoint: http://<your ip>/match/runmatcher_web_file .
 
 
