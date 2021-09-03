@@ -40,8 +40,8 @@ https://dl.fbaipublicfiles.com/fasttext/vectors-english/crawl-300d-2M-subword.zi
 
 **step 16**: Start nginx server by 'sudo systemctl start nginx'
 
-**step 17**: Access the matching from a browser: http://<your ip>/match
+**step 17**: Access the matching service from a browser: http://\<your ip\>/match
   
-**step 18**: Web service endpoint: http://<your ip>/match/runmatcher_web_file .
+**step 18**: Web service endpoint: http://\<your ip\>/match/runmatcher_web_file .
 
 
