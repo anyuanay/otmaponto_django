@@ -1,0 +1,5 @@
+Track,Test Case,Matcher,Type,Precision (P),Recall (R),Residual Recall (R+),F1,"# of TP","# of FP","# of FN","# of Correspondences",Time,Time (HH:MM:SS)
+largebio,small-fma-snomed,MatcherHTTPCall,ALL,0.3793747083527765,0.6745768337205443,0.6273280121626758,0.4856340720387074,4065,6650,1961,12798,334009909546,00:05:34
+largebio,small-fma-snomed,MatcherHTTPCall,CLASSES,0.3793747083527765,0.6745768337205443,0.6273280121626758,0.4856340720387074,4065,6650,1961,12798,-,-
+largebio,small-fma-snomed,MatcherHTTPCall,PROPERTIES,0.0,0.0,0.0,0.0,0,0,0,0,-,-
+largebio,small-fma-snomed,MatcherHTTPCall,INSTANCES,0.0,0.0,0.0,0.0,0,0,0,0,-,-

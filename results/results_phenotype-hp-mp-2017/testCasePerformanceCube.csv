@@ -1,0 +1,5 @@
+Track,Test Case,Matcher,Type,Precision (P),Recall (R),Residual Recall (R+),F1,"# of TP","# of FP","# of FN","# of Correspondences",Time,Time (HH:MM:SS)
+phenotype,hp-mp,MatcherHTTPCall,ALL,0.11399306129192135,0.9913793103448276,0.8214285714285714,0.20447473699807378,690,5363,6,6053,234576132780,00:03:54
+phenotype,hp-mp,MatcherHTTPCall,CLASSES,0.1140118968935889,0.9913793103448276,0.8214285714285714,0.20450503852993482,690,5362,6,6052,-,-
+phenotype,hp-mp,MatcherHTTPCall,PROPERTIES,0.0,0.0,0.0,0.0,0,1,0,1,-,-
+phenotype,hp-mp,MatcherHTTPCall,INSTANCES,0.0,0.0,0.0,0.0,0,0,0,0,-,-
