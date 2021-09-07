@@ -1,0 +1,54 @@
+Submission to the OTMapOnto Matcher System:
+===========================================
+
+1. Link to the Running Web Service:
+
+http://ec2-18-207-252-203.compute-1.amazonaws.com/match/runmatcher_web_file
+
+2. Code for Evaluating the Running Web Service:
+
+package xxxxxx
+
+import de.uni_mannheim.informatik.dws.melt.matching_base.external.http.MatcherHTTPCall;
+import de.uni_mannheim.informatik.dws.melt.matching_data.TrackRepository;
+import de.uni_mannheim.informatik.dws.melt.matching_eval.ExecutionResultSet;
+import de.uni_mannheim.informatik.dws.melt.matching_eval.Executor;
+import de.uni_mannheim.informatik.dws.melt.matching_eval.evaluator.EvaluatorCSV;
+
+import java.net.URI;
+
+public class EvaluationEndpoint {
+
+    public static void main(String[] args) throws Exception {
+        // wrap our web service (running in this case locally on port 8000)
+        URI matcherServiceUri = new URI("http://ec2-18-207-252-203.compute-1.amazonaws.com/match/runmatcher_web_file");
+        MatcherHTTPCall matcher = new MatcherHTTPCall(matcherServiceUri, true);
+        
+        // let's run the matcher
+        ExecutionResultSet ers = Executor.run(TrackRepository.Conference.V1.getTestCases(), matcher);
+        
+        //System.out.println(ers);
+        
+        // let's evaluate the execution result set
+        EvaluatorCSV evaluatorCSV = new EvaluatorCSV(ers);
+        
+        // let's serialize the results
+        evaluatorCSV.writeToDirectory();
+    }
+}
+
+
+ADDITIONALLY:
+=============
+
+a. Access the Matcher from a Web Browser:
+
+http://ec2-18-207-252-203.compute-1.amazonaws.com/match/
+
+b. All the Sources and Available Results:
+
+https://github.com/anyuanay/otmaponto_django
+
+c. The Instructions for a Local Installation:
+
+https://github.com/anyuanay/otmaponto_django/blob/master/README.md
