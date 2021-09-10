@@ -1315,12 +1315,26 @@ def ensemble_map(source_url, target_url, embs_model):
     OWL_NS = Namespace('http://www.w3.org/2002/07/owl#')
     
     source_graph = Graph()
-    source_graph.parse(source_url)
+    
+    #source_graph.parse(source_url)
+    
+    stack_urls = []
+    stack_urls.append(source_url)
+    visited_urls = []
+    maponto.parse_owl_withImports(source_graph, stack_urls, visited_urls)
+    
     source_graph.namespace_manager.bind("owl", OWL_NS)
     logging.info("Read source with %s triples.", len(source_graph))
 
     target_graph = Graph()
-    target_graph.parse(target_url)
+    
+    #target_graph.parse(target_url)
+    
+    stack_urls = []
+    stack_urls.append(target_url)
+    visited_urls = []
+    maponto.parse_owl_withImports(target_graph, stack_urls, visited_urls)
+    
     target_graph.namespace_manager.bind("owl", OWL_NS)
     logging.info("Read target with %s triples.", len(target_graph))
     
