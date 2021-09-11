@@ -1311,11 +1311,14 @@ def mapping_label_syn_rest(slabel_clnd_uris, tlabel_clnd_uris, src_graph, tgt_gr
 def ensemble_map(source_url, target_url, embs_model):
     
     logging.info("Python ensemble mapper info: map " + source_url + " to " + target_url)
-
+    
     OWL_NS = Namespace('http://www.w3.org/2002/07/owl#')
+    SKOS_NS = Namespace("http://www.w3.org/2004/02/skos/core#")
     
     source_graph = Graph()
-    
+    source_graph.namespace_manager.bind("owl", OWL_NS)
+    source_graph.namespace_manager.bind("skos", SKOS_NS)
+
     #source_graph.parse(source_url)
     
     stack_urls = []
@@ -1323,10 +1326,11 @@ def ensemble_map(source_url, target_url, embs_model):
     visited_urls = []
     maponto.parse_owl_withImports(source_graph, stack_urls, visited_urls)
     
-    source_graph.namespace_manager.bind("owl", OWL_NS)
     logging.info("Read source with %s triples.", len(source_graph))
 
     target_graph = Graph()
+    target_graph.namespace_manager.bind("owl", OWL_NS)
+    target_graph.namespace_manager.bind("skos", SKOS_NS)
     
     #target_graph.parse(target_url)
     
@@ -1335,8 +1339,8 @@ def ensemble_map(source_url, target_url, embs_model):
     visited_urls = []
     maponto.parse_owl_withImports(target_graph, stack_urls, visited_urls)
     
-    target_graph.namespace_manager.bind("owl", OWL_NS)
     logging.info("Read target with %s triples.", len(target_graph))
+    
     
     # initialize the final ensemble mappings
     column_names = ["source", "source_label", "target", "target_label"]

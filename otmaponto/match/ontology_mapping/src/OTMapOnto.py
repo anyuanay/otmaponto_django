@@ -8,6 +8,7 @@ import scipy as sp
 import json
 
 from rdflib import Graph, URIRef, RDFS
+from rdflib.namespace import Namespace, NamespaceManager
 from gensim.models.fasttext import FastText
 from gensim.models.fasttext import load_facebook_model
 from gensim.models.fasttext import load_facebook_vectors
@@ -110,16 +111,28 @@ def extract_label_uris(graph):
         input: graph: an RDF graph parsed from an owl file by rdflib
         output: a DataFrame of concept labels and uris ['label', 'uri']
     """
+    ## Add necessary namespaces
+    OWL_NS = Namespace('http://www.w3.org/2002/07/owl#')
+    SKOS_NS = Namespace("http://www.w3.org/2004/02/skos/core#")
+    graph.namespace_manager.bind("owl", OWL_NS)
+    graph.namespace_manager.bind("skos", SKOS_NS)
+    
+    ##############
     labels = []
     uris = []
     
     q_res = []
     
     try:
-        def_query = '''SELECT ?a ?b
+        def_query = '''SELECT DISTINCT ?a ?b
                    WHERE {
-                   ?a a owl:Class .
-                   ?a rdfs:label ?b .
+                   {?a a owl:Class .
+                    ?a rdfs:label ?b .
+                   }
+                   UNION
+                   {?a a owl:Class .
+                    ?a skos:prefLabel ?b .
+                   }
                    FILTER(!isBlank(?a))}
                    ORDER BY ?a'''
     
@@ -336,20 +349,23 @@ def parse_owl_withImports(graph, stack_urls, visited_urls):
     print(url)
     visited_urls.append(url)
     
-    graph.parse(url, format='xml')
+    try:
+        graph.parse(url, format='xml')
     
-    q = """
-    SELECT ?o ?s
-    WHERE {
-        ?o owl:imports  ?s.
-    }
-    """
+        q = """
+        SELECT ?o ?s
+        WHERE {
+            ?o owl:imports  ?s.
+        }
+        """
 
-    # Apply the query to get all owl:imports sources
-    for r in graph.query(q):
-        imported_url = r[1].toPython()
-        if (imported_url not in stack_urls) and (imported_url not in visited_urls):
-            stack_urls.append(imported_url)
+        # Apply the query to get all owl:imports sources
+        for r in graph.query(q):
+            imported_url = r[1].toPython()
+            if (imported_url not in stack_urls) and (imported_url not in visited_urls):
+                stack_urls.append(imported_url)
+    except:
+        logging.info("parse_owl_withImports: graph.prase(): an exception occured.")
     
     parse_owl_withImports(graph, stack_urls, visited_urls)
 
