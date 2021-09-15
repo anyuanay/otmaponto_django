@@ -369,7 +369,520 @@ def parse_owl_withImports(graph, stack_urls, visited_urls):
     
     parse_owl_withImports(graph, stack_urls, visited_urls)
 
+# Convert uri to concept for SPARQL query
+def uri_concept(uri, graph):
+    '''
+        input: uri: a full uri in the graph
+               graph: a RDF graph
+        output: the concept without the base prefix in the format :Concept
+    '''
+    prefix = get_prefix_rdfgraph(graph)
+    concept = ":" + uri.replace(prefix, "")
+    
+    return concept
 
+# Extract parents -> super classes
+def query_superClasses(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+      
+    q = "select ?o {" + concept + " \
+        rdfs:subClassOf ?o . \
+        filter(!isBlank(?o)) .} "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append("rdfs:subClassOf")
+        related.append(r[0].toPython())
+        what.append("child")
+    return relation, related, what
+
+
+# Extract children -> sub classes
+def query_subClasses(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+    
+    q = " \
+            select ?s \
+            { \
+                ?s rdfs:subClassOf " + concept + ". \
+                filter(!isBlank(?s)) . \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append("superClassOf")
+        related.append(r[0].toPython())
+        what.append("parent")
+    return relation, related, what
+
+
+# Extract relations from some values from
+def query_relations_someValuesFrom(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+    
+    #print(concept)
+    
+    q = " \
+            select ?p2 ?o2 \
+            {" + concept + " rdfs:subClassOf ?o1 . \
+                ?o1 rdf:type owl:Restriction .  \
+                ?o1 owl:onProperty ?p2 . \
+                ?o1 owl:someValuesFrom ?o2 \
+             } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append(r[0].toPython())
+        related.append(r[1].toPython())
+        what.append("someValuesFrom")
+    return relation, related, what
+
+
+# Extract relations from all values from
+def query_relations_allValuesFrom(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+    
+    q = " \
+            select ?p2 ?o2 \
+            {" + concept + " rdfs:subClassOf ?o1 . \
+                ?o1 rdf:type owl:Restriction . \
+                ?o1 owl:onProperty ?p2 . \
+                ?o1 owl:allValuesFrom ?o2 \
+            }"
+    
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append(r[0].toPython())
+        related.append(r[1].toPython())
+        what.append("allValuesFrom")
+    return relation, related, what
+
+
+# Extract relations from mininum cardinality constraints
+def query_relations_minCardinality(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+    
+    q = "\
+            select ?p2 ?o2\
+            {" + \
+                concept + " rdfs:subClassOf ?o1 . \
+                ?o1 rdf:type owl:Restriction . \
+                ?o1 owl:onProperty ?p2 . \
+                ?o1 owl:minCardinality ?o2 \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append(r[0].toPython())
+        related.append(r[1].toPython())
+        what.append("owl:minCardinality")
+    return relation, related, what
+
+
+# Extract relations from maximum cardinality constraints
+def query_relations_maxCardinality(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+    
+    q = "\
+            select ?p2 ?o2 \
+            {" + \
+                concept + " rdfs:subClassOf ?o1 . \
+                ?o1 rdf:type owl:Restriction . \
+                ?o1 owl:onProperty ?p2 . \
+                ?o1 owl:maxCardinality ?o2 \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append(r[0].toPython())
+        related.append(r[1].toPython())
+        what.append("owl:maxCardinality")
+    return relation, related, what
+
+
+# Extract relations as domains
+def query_relations_asDomains(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+    
+    q = "\
+            select ?b ?c \
+            { \
+                {" + concept + " rdfs:subClassOf ?a . \
+                ?a rdf:type owl:Restriction . \
+                ?a owl:onProperty ?b . \
+                ?b rdf:type owl:ObjectProperty . \
+                ?b rdfs:range ?c . \
+                } \
+                UNION \
+                { \
+                ?b rdf:type owl:ObjectProperty . \
+                ?b rdfs:domain " + concept + " . \
+                ?b rdfs:range ?c . \
+                } \
+                filter(!isBlank(?b)) . \
+                filter(!isBlank(?c)) \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append(r[0].toPython())
+        related.append(r[1].toPython())
+        what.append("domain")
+    return relation, related, what
+
+
+# Extract datatype properties
+def query_datatype_properties(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+    
+    q = "\
+            select ?b ?c \
+            { \
+                { \
+                ?b rdf:type owl:DatatypeProperty . \
+                ?b rdfs:domain " + concept + " . \
+                ?b rdfs:range ?c . \
+                } \
+                UNION \
+                {?b rdf:type owl:DatatypeProperty . \
+                ?b rdfs:domain ?o. \
+                ?o owl:unionOf ?o1 . \
+                ?o1 (rdf:rest)*/rdf:first " + concept + " . \
+                ?b rdfs:range ?c . \
+                } \
+                filter(!isBlank(?b)) . \
+                filter(!isBlank(?c)) . \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append(r[0].toPython())
+        related.append(r[1].toPython())
+        what.append("datatype domain")
+    return relation, related, what
+
+
+# Extract relations as range
+def query_relations_asRanges(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+
+    q = "\
+            select ?b ?c \
+            { \
+                {?c rdfs:subClassOf ?a . \
+                ?a rdf:type owl:Restriction . \
+                ?a owl:onProperty ?b . \
+                ?b rdf:type owl:ObjectProperty . \
+                ?b rdfs:range " + concept + " . \
+                } \
+                UNION \
+                { \
+                ?b rdf:type owl:ObjectProperty . \
+                ?b rdfs:range " + concept + " . \
+                ?b rdfs:domain ?c . \
+                } \
+                filter(!isBlank(?b)) . \
+                filter(!isBlank(?c)) \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append(r[0].toPython())
+        related.append(r[1].toPython())
+        what.append("range")
+    return relation, related, what
+
+
+# Extract rdf comments
+def query_comments(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+        
+    q = " \
+            select ?o \
+            {" + \
+                concept + " rdfs:comment ?o . \
+                filter(!isBlank(?o)) . \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append("rdfs:comment")
+        related.append(r[0].toPython())
+        what.append("comment")
+    return relation, related, what
+
+
+# Extract equivalent classes
+def query_equivalent_classes(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+
+    q = "\
+            select ?o2 \
+            { \
+                {" + \
+                 concept + " owl:equivalentClass ?o2 . \
+                } \
+                UNION \
+                {" + concept + " owl:equivalentClass ?o . \
+                ?o owl:unionOf ?o1 . \
+                ?o1 (rdf:rest)*/rdf:first ?o2 . \
+                } \
+                filter(!isBlank(?o2)) . \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append("owl:equivalentClass")
+        related.append(r[0].toPython())
+        what.append("equivalent")
+    return relation, related, what
+
+
+# Extract disjoint class
+def query_disjoint_classes(uri, graph):
+    '''
+        input: uri: a full uri in the given RDF graph
+               graph: an RDF graph
+        output: 3 lists: relation: list of relations
+                         related: list of related concepts (uris)
+                         what: list of types of the relations
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    concept = uri_concept(uri, graph)
+    
+    q = " \
+            select ?o2 \
+            { \
+                {" + \
+                concept + " owl:disjointWith ?o2 . \
+                } \
+                UNION \
+                {" + concept + " owl:disjointWith ?o . \
+                ?o owl:unionOf ?o1 . \
+                ?o1 (rdf:rest)*/rdf:first ?o2 . \
+                } \
+                filter(!isBlank(?o2)) . \
+            } \
+        "
+    
+    res = graph.query(q)
+    for r in res:
+        relation.append("owl:disjointWith")
+        related.append(r[0].toPython())
+        what.append("disjoint")
+    return relation, related, what
+
+
+# query all related information for a uri from an RDF graph
+def query_related_information(uri, graph):
+    '''
+        input:uri: a concept uri in the given RDF graph
+              graph: an RDF graph
+        output: a DataFrame with columns "relation", "related", "what"
+    '''
+    relation = []
+    related = []
+    what = []
+    
+    l1, l2, l3 = query_superClasses(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_subClasses(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_relations_someValuesFrom(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_relations_allValuesFrom(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_relations_minCardinality(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_relations_maxCardinality(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_relations_asDomains(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_datatype_properties(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_relations_asRanges(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_comments(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_equivalent_classes(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    l1, l2, l3 = query_disjoint_classes(uri, graph)
+    relation.extend(l1)
+    related.extend(l2)
+    what.extend(l3)
+    
+    df = pd.DataFrame({"relation":relation, "related":related, "what":what})
+    
+    return df.drop_duplicates()
+
+    
 # compute OT couplings between source and target labels
 def ot_couplings(lmv, lnv, costs):
     """
