@@ -306,6 +306,23 @@ def compute_pairwise_wd_phDiagrams(sdiagrams, tdiagrams):
     return np.asarray(wds)
 
 
+# extract the final label from a uri in an ontology
+def extract_label_from_uri(uri):
+    '''
+        input: uri: a uri in an ontology
+        output: label: a string at the end of the uri as the label
+    '''
+    idx_sharp = uri.rfind("#")
+    if idx_sharp > 0:
+        return  uri[idx_sharp + 1:]
+    else:
+        idx_slash = uri.rfind("/")
+        if idx_slash > 0:
+            return uri[idx_slash + 1:]
+    
+    return uri   
+
+
 # Extract ObjectProperty labels to URIs;
 def extract_objectProperty_uris(graph):
     """
@@ -335,11 +352,50 @@ def extract_objectProperty_uris(graph):
             if idx_slash > 0:
                 label = uri[idx_slash + 1:]
                 labels.append(label)
-                uris.append(uri)
-        
-          
+                uris.append(uri)  
     
     return pd.DataFrame({'label': labels, 'uri':uris})
+
+
+# Extract ObjectProperty labels including domain and range labels to URIs;
+def extract_objectProperty_domain_range_uris(graph):
+    """
+        input: graph: an RDF graph parsed from an owl file by rdflib
+        output: a DataFrame of ObjectProperty+domain+range labels and uris ['label', 'uri']
+    """
+    
+    def_query = '''SELECT ?d ?p ?r
+                   {
+                   ?p a owl:ObjectProperty .
+                   ?p rdfs:domain ?d .
+                   ?p rdfs:range ?r .
+                   filter(!isBlank(?d)) .
+                   filter(!isBlank(?p)) .
+                   filter(!isBlank(?r))
+                   }
+                   ORDER BY ?p
+            '''
+    res = graph.query(def_query)
+
+    labels = []
+    uris = []
+
+    for res in res:
+        stat = ""
+        domain = res[0].toPython()
+        stat += extract_label_from_uri(domain) + " "
+
+        objproperty = res[1].toPython()
+        stat += extract_label_from_uri(objproperty) + " "
+
+        range = res[2].toPython()
+        stat += extract_label_from_uri(range)
+
+        labels.append(stat.strip())
+        uris.append(objproperty)
+    
+    return pd.DataFrame({'label': labels, 'uri':uris})
+
 
 # Extract DatatypeProperty labels to URIs;
 def extract_datatypeProperty_uris(graph):
@@ -373,6 +429,44 @@ def extract_datatypeProperty_uris(graph):
                 uris.append(uri)
         
     return pd.DataFrame({'label': labels, 'uri':uris})
+
+
+# Extract DatatypeProperty labels and domain labels to URIs;
+def extract_datatypeProperty_domain_uris(graph):
+    """
+        input: graph: an RDF graph parsed from an owl file by rdflib
+        output: a DataFrame of DatatpyeProperty+domain labels and uris ['label', 'uri']
+    """
+    
+    def_query = '''SELECT ?d ?p
+                   {
+                   ?p a owl:DatatypeProperty .
+                   ?p rdfs:domain ?d .
+                   ?p rdfs:range ?r .
+                   filter(!isBlank(?d)) .
+                   filter(!isBlank(?p)) .
+                   filter(!isBlank(?r))
+                   }
+                   ORDER BY ?p
+            '''
+    res = graph.query(def_query)
+
+    labels = []
+    uris = []
+
+    for res in res:
+        stat = ""
+        domain = res[0].toPython()
+        stat += extract_label_from_uri(domain) + " "
+
+        datatypeproperty = res[1].toPython()
+        stat += extract_label_from_uri(datatypeproperty)
+
+        labels.append(stat)
+        uris.append(datatypeproperty)
+        
+    return pd.DataFrame({'label': labels, 'uri':uris})
+
 
 def jaccard_similarity(list1, list2):
     intersection = len(list(set(list1).intersection(list2)))

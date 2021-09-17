@@ -13,10 +13,6 @@ from gensim.models.fasttext import FastText
 from gensim.models.fasttext import load_facebook_model
 from gensim.models.fasttext import load_facebook_vectors
 
-
-from corpus_build_utils import clean_document_lower
-from corpus_build_utils import clean_document
-
 from AlignmentFormat import serialize_mapping_to_tmp_file, serialize_mapping_to_file
 
 import sys
@@ -25,6 +21,10 @@ from collections import defaultdict
 
 import jellyfish
 import ot
+import camelsplit
+import nltk
+from nltk.corpus import stopwords
+import re
 
 from xml.dom import minidom
 from nltk.corpus import wordnet
@@ -34,6 +34,78 @@ import warnings
 from tqdm import tqdm
 
 import OTNeighborhood_TDA as mapneighbor
+
+
+def clean_document_lower(_in_str):
+    """
+    A function to prepare a document for word vector training.
+    :param _in_str: An input document as a string.
+    :return: A list of cleaned tokens to represent the document.
+    """
+    _in_str = str(_in_str)
+    
+    # convert camelCase to underlined string
+    _in_str = "_".join(camelsplit.camelsplit(_in_str))
+    
+    _in_str = _in_str.replace('\n', " ")
+    _in_str = re.sub(r"<NUMBER>", " ", _in_str)
+    _in_str = re.sub(r"<DATE>", " ", _in_str)
+    _in_str = re.sub(r"<PHONE>", " ", _in_str)
+    _in_str = re.sub(r"<EMAIL>", " ", _in_str)
+    _in_str = re.sub(r"<MONEY>", " ", _in_str)
+    _in_str = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", _in_str)
+    _in_str = re.sub(r"\'s", " \'s", _in_str)
+    _in_str = re.sub(r"\'ve", " \'ve", _in_str)
+    _in_str = re.sub(r"n\'t", " n\'t", _in_str)
+    _in_str = re.sub(r"\'re", " \'re", _in_str)
+    _in_str = re.sub(r"\'d", " \'d", _in_str)
+    _in_str = re.sub(r"\'ll", " \'ll", _in_str)
+    _in_str = re.sub(r",", " , ", _in_str)
+    _in_str = re.sub(r"!", " ! ", _in_str)
+    _in_str = re.sub(r"\(", r" \( ", _in_str)
+    _in_str = re.sub(r"\)", r" \) ", _in_str)
+    _in_str = re.sub(r"\?", r" \? ", _in_str)
+    _in_str = re.sub(r"\s{2,}", " ", _in_str)
+    _in_str = re.sub(r"[^\w\s]", " ", _in_str)
+    _stops = set(stopwords.words('english'))
+    _out_list = list(filter(None, _in_str.strip().lower().split(' ')))
+    _out_list = [w for w in _out_list if w not in _stops]
+    return _out_list
+
+
+def clean_document(_in_str):
+    """
+    A function to prepare a document for word vector training.
+    :param _in_str: An input document as a string.
+    :return: A list of cleaned tokens to represent the document.
+    """
+    _in_str = str(_in_str)
+    _in_str = _in_str.replace('\n', " ")
+    _in_str = re.sub(r"<NUMBER>", " ", _in_str)
+    _in_str = re.sub(r"<DATE>", " ", _in_str)
+    _in_str = re.sub(r"<PHONE>", " ", _in_str)
+    _in_str = re.sub(r"<EMAIL>", " ", _in_str)
+    _in_str = re.sub(r"<MONEY>", " ", _in_str)
+    _in_str = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", _in_str)
+    _in_str = re.sub(r"\'s", " \'s", _in_str)
+    _in_str = re.sub(r"\'ve", " \'ve", _in_str)
+    _in_str = re.sub(r"n\'t", " n\'t", _in_str)
+    _in_str = re.sub(r"\'re", " \'re", _in_str)
+    _in_str = re.sub(r"\'d", " \'d", _in_str)
+    _in_str = re.sub(r"\'ll", " \'ll", _in_str)
+    _in_str = re.sub(r",", " , ", _in_str)
+    _in_str = re.sub(r"!", " ! ", _in_str)
+    _in_str = re.sub(r"\(", r" \( ", _in_str)
+    _in_str = re.sub(r"\)", r" \) ", _in_str)
+    _in_str = re.sub(r"\?", r" \? ", _in_str)
+    _in_str = re.sub(r"\s{2,}", " ", _in_str)
+    _in_str = re.sub(r"[^\w\s]", " ", _in_str)
+    _stops = set(stopwords.words('english'))
+    _out_list = list(filter(None, _in_str.lower().split(' ')))
+    # _out_list = [w for w in _out_list if w not in _stops]
+    return _out_list
+
+
 
 # Load alignments as a DataFrame
 def load_alignments(rdf_path, name):
