@@ -31,6 +31,10 @@ from nltk.corpus import wordnet
 
 import warnings
 
+from tqdm import tqdm
+
+import OTNeighborhood_TDA as mapneighbor
+
 # Load alignments as a DataFrame
 def load_alignments(rdf_path, name):
     """
@@ -87,6 +91,49 @@ def evaluate(align_df, refs_rdf_path):
     print("Recall is {}".format(r))
     print("F1-Measure is {}".format(f))
  
+# check alignments against references
+def evaluate_against_refs(refs_df, preds_df):
+    '''
+        input: refs_df: DataFrame with reference alignments ['source', 'target', 
+               'relation', 'confidence']
+               preds_df: DataFrame with predicted alignments ['source', 'source_label', 
+               'target', 'target_label']
+        output: DataFrame ['source_refs', 'target_refs', 'source_preds',
+                'target_preds', 'source_label_preds', 'target_label_preds']], indexed by
+                '1_match', '2_nomatch', '3_ref_only', '4_pred_only'
+    '''
+    refs_refs = refs_df.add_suffix('_refs')
+    preds_preds = preds_df.add_suffix('_preds')
+    joined_df = pd.merge(refs_refs, preds_preds, how="outer", left_on=["source_refs"], \
+         right_on=["source_preds"])[['source_refs', 'target_refs', 'source_preds',\
+         'target_preds', 'source_label_preds', 'target_label_preds']]
+    
+    evals = joined_df.apply(lambda row: add_evaluation_value(row), axis=1)
+    
+    return joined_df.set_index(evals).sort_index()
+
+
+# Based on the comparison between refs and preds, add an evaluation value to 
+# the evaluation DataFrame
+def add_evaluation_value(row):
+    '''
+        input: row: a row from the evaluation DataFrame with columns 
+            ['source_refs', 'target_refs', 'source_preds', 'target_preds', 
+            'source_label_preds', 'target_label_preds']
+        output: a value indicating the type of evaluation results:
+                ref=pred, ref!=pred, ref_only, pred_only
+    '''
+    if row['source_refs'] == row['source_preds']:
+        if row['target_refs'] == row['target_preds']:
+            return '1_match'
+        else:
+            return '2_nomatch'
+    elif pd.isna(row['source_preds']):
+        return '3_ref_only'
+    elif pd.isna(row['source_refs']):
+        return '4_pred_only'
+    else:
+        return 'unknown'
 
 
 # get the prefix of the rdf graph
@@ -214,6 +261,37 @@ def match_concept_labels(slabel_clnd_uris, tlabel_clnd_uris, input_alignment):
     
     return alignment
     # return [('http://one.de', 'http://two.de', '=', 1.0)]
+    
+
+
+# match concept on jaccard similarity
+def match_concept_labels_jac(slabel_clnd_uris, tlabel_clnd_uris, input_alignment):
+    """
+    match the source to target based on the jaccard similarity of the lists of 
+    words in their clndLabels
+        input: slabel_clnd_uris: source DataFrame with 'label', 'uri', 'clndLabel'
+               tlabel_clnd_uris: target DataFrame with 'label', 'uri', 'clndLabel'
+               input_alignment
+        output: alignment DataFrame with: 'source', 'source_label', 'target', 'target_label'
+    """
+    source = []
+    source_label = []
+    target = []
+    target_label = []
+    for srow in tqdm(slabel_clnd_uris.values):
+        slab = srow[2]
+        for trow in tlabel_clnd_uris.values:
+            tlab = trow[2]
+            if mapneighbor.jaccard_similarity(slab.split(), tlab.split()) >= 0.5:
+                source.append(srow[1])
+                source_label.append(srow[0])
+                target.append(trow[1])
+                target_label.append(trow[0])
+                
+    res = pd.DataFrame({'source':source, 'source_label':source_label, \
+                        'target':target, 'target_label':target_label})
+    
+    return res
 
 
 # Load a pre-trained word embedding model
