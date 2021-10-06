@@ -3,7 +3,7 @@ Submission to the OTMapOnto Matcher System:
 
 1. Link to the Running Web Service:
 
-http://ec2-18-207-252-203.compute-1.amazonaws.com/match/runmatcher_web_file
+http://34.238.189.244/match/runmatcher_web_file
 
 2. Code for Evaluating the Running Web Service:
 
@@ -21,11 +21,11 @@ public class EvaluationEndpoint {
 
     public static void main(String[] args) throws Exception {
         // wrap our web service (running in this case locally on port 8000)
-        URI matcherServiceUri = new URI("http://ec2-18-207-252-203.compute-1.amazonaws.com/match/runmatcher_web_file");
+        URI matcherServiceUri = new URI("http://34.238.189.244/match/runmatcher_web_file");
         MatcherHTTPCall matcher = new MatcherHTTPCall(matcherServiceUri, true);
         
         // let's run the matcher
-        ExecutionResultSet ers = Executor.run(TrackRepository.Conference.V1.getTestCases(), matcher);
+        ExecutionResultSet ers = Executor.run(TrackRepository.Largebio.V2016.FMA_NCI_SMALL.getTestCases(), matcher);
         
         //System.out.println(ers);
         
@@ -43,7 +43,7 @@ ADDITIONALLY:
 
 a. Access the Matcher from a Web Browser:
 
-http://ec2-18-207-252-203.compute-1.amazonaws.com/match/
+http://34.238.189.244/match/
 
 b. All the Sources and Available Results:
 
