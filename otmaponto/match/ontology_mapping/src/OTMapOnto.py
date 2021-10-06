@@ -455,6 +455,35 @@ def costs_embeddings(src_label_list, tgt_label_list, embs_model):
         
     return costs / costs.max()
 
+# compute the Wasserstein distance between the concept labels of two ontologies
+def WD_between_labels(slabel_list, tlabel_list, embs_model):
+    '''
+        input: slabel_list: a list of source labels
+               tlabel_list: a list of target labels
+               embs_model: pre-trained model
+        output: 
+                costs: the normalized ground costs between the source and target labels
+                wd: Wasserstein distance between the source and target label lists
+    '''
+    sembs = []
+    tembs = []
+    for slabel in slabel_list:
+        sembs.append(average_embeddings(slabel, 300, embs_model))
+    for tlabel in tlabel_list:
+        tembs.append(average_embeddings(tlabel, 300, embs_model))
+
+    costs = ot.dist(np.array(sembs), np.array(tembs))
+
+    #logging.info("The shape of the cost matrix is {}".format(costs.shape))
+
+    costs = costs / costs.max()
+
+    a = np.ones((len(sembs),)) / len(sembs)
+    b = np.ones((len(tembs),)) / len(tembs)
+
+    wd = ot.emd2(a, b, costs)
+    
+    return costs, wd
 
 def costs_wordCount_embeddings(sword_counts, tword_counts, embs_model, method):
     """
