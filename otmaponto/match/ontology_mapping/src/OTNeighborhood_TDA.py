@@ -32,6 +32,7 @@ import OTMapOnto as maponto
 from gtda.homology import VietorisRipsPersistence
 
 from tqdm import tqdm
+from scipy.stats.morestats import ansari
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -88,6 +89,7 @@ def get_relatedWords_counts(topic, uri, label, clndLabel, rdfgraph, label_clnd_u
             words[synw.lower()] = words[synw.lower()] + 1
     
     
+    
     for tok in clndLabel.split():
         words[tok] = words[tok] + 1
         for syn in wordnet.synsets(tok):
@@ -97,6 +99,36 @@ def get_relatedWords_counts(topic, uri, label, clndLabel, rdfgraph, label_clnd_u
     
     return words
 
+
+# obtain phrases as combined synonyms from a phrase with multiple worlds
+def get_syn_phrases(phrase):
+    """
+        input: phrase: a string with multiple words
+        output: a list of phrases consisting of synonyms
+    """
+    ans = []
+    temp = []
+    
+    words = phrase.split()
+    
+    for word in words:
+        synonyms = []
+        for syn in wordnet.synsets(word):
+            for synw in syn.lemma_names():
+                if synw not in synonyms:
+                    synonyms.append(synw)
+        if len(ans) == 0:
+            ans.extend(synonyms)
+        else:
+            temp.clear()
+            for curr in ans:
+                for w in synonyms:
+                    temp.append(curr + " " + w)    
+    
+        ans.clear()
+        ans.extend(temp)
+        
+    return ans
 
 # compute the Wasserstein distance between two uris based on their relatedWords and counts
 def compute_Wasserstein_distance(srelatedWords_counts, trelatedWords_counts, embs_model):
