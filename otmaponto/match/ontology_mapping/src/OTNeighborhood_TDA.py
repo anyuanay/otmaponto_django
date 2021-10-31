@@ -100,7 +100,7 @@ def get_relatedWords_counts(topic, uri, label, clndLabel, rdfgraph, label_clnd_u
     return words
 
 
-# obtain phrases as combined synonyms from a phrase with multiple worlds
+# obtain phrases as combined synonyms from a phrase with multiple words
 def get_syn_phrases(phrase):
     """
         input: phrase: a string with multiple words

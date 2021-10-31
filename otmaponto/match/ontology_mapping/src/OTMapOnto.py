@@ -456,7 +456,7 @@ def costs_embeddings(src_label_list, tgt_label_list, embs_model):
     return costs / costs.max()
 
 # compute the Wasserstein distance between the concept labels of two ontologies
-def WD_between_labels(slabel_list, tlabel_list, embs_model):
+def wd_between_labels(slabel_list, tlabel_list, embs_model):
     '''
         input: slabel_list: a list of source labels
                tlabel_list: a list of target labels
