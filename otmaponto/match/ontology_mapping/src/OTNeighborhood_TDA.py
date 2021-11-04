@@ -125,8 +125,8 @@ def get_syn_phrases(phrase):
                 for w in synonyms:
                     temp.append(curr + " " + w)    
     
-        ans.clear()
-        ans.extend(temp)
+            ans.clear()
+            ans.extend(temp)
         
     return ans
 
