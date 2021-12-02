@@ -9,15 +9,6 @@ from corpus_build_utils import clean_document_lower
 from train_ft import train_ft_custom_model
 
 
-def load_graph(_name):
-    ds_name = _name.split(".")[0]
-    _wd = os.path.normpath(os.getcwd() + os.sep + os.pardir)
-    dd = os.path.join(_wd, "data", "anatomy-dataset")
-    _g = Graph()
-    _g.parse(os.path.join(dd, _name))
-    _md = os.path.join(_wd, "src", "binaries", "{}_concept_ft.mod".format(ds_name))
-    return _g, _md, _wd
-
 
 def build_concept_graph(_graph):
     def_query = '''SELECT ?a ?b
@@ -76,6 +67,18 @@ def generate_embeddings(_fname, _mt):
         g.write(json.dumps(_vectors).encode('utf-8'))
     with open(os.path.join(wd, 'src', 'output', '{}_{}_uri_keys.json'.format(_fname, _mt)), mode='wb') as g:
         g.write(json.dumps(_map).encode('utf-8'))
+
+    
+    
+def load_graph(_name):
+    ds_name = _name.split(".")[0]
+    _wd = os.path.normpath(os.getcwd() + os.sep + os.pardir)
+    dd = os.path.join(_wd, "data", "anatomy-dataset")
+    _g = Graph()
+    _g.parse(os.path.join(dd, _name))
+    _md = os.path.join(_wd, "src", "binaries", "{}_concept_ft.mod".format(ds_name))
+    return _g, _md, _wd
+
 
 
 if __name__ == "__main__":

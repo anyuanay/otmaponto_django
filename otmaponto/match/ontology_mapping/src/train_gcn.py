@@ -16,6 +16,22 @@ def acc(pred, label, mask):
     return acc
 
 
+def featurize(_gd, _model, _name):
+    dataset = Anatomy(root=_gd, name=_name)
+    data = dataset[0]
+    _model.eval()
+    _node_feat = _model.encode(data.x.to(device), data.edge_index.to(device)).detach().cpu()
+    return _node_feat
+
+
+def test(pos_edge_index, neg_edge_index):
+    model.eval()
+    with torch.no_grad():
+        z = model.encode(x, train_pos_edge_index)
+    return model.test(z, pos_edge_index, neg_edge_index)
+
+
+
 def train(_debug, _epoch):
     model.train()
     optimizer.zero_grad()
@@ -31,20 +47,6 @@ def train(_debug, _epoch):
     optimizer.step()
     return float(loss)
 
-
-def test(pos_edge_index, neg_edge_index):
-    model.eval()
-    with torch.no_grad():
-        z = model.encode(x, train_pos_edge_index)
-    return model.test(z, pos_edge_index, neg_edge_index)
-
-
-def featurize(_gd, _model, _name):
-    dataset = Anatomy(root=_gd, name=_name)
-    data = dataset[0]
-    _model.eval()
-    _node_feat = _model.encode(data.x.to(device), data.edge_index.to(device)).detach().cpu()
-    return _node_feat
 
 
 if __name__ == "__main__":

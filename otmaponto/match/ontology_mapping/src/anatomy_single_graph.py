@@ -9,35 +9,6 @@ from xml.dom import minidom
 from rdflib import Graph
 
 
-def load_graph(_name):
-    ds_name = _name.split(".")[0]
-    _wd = os.path.normpath(os.getcwd() + os.sep + os.pardir)
-    dd = os.path.join(_wd, "data", "anatomy-dataset")
-    _g = Graph()
-    _g.parse(os.path.join(dd, _name))
-    _md = os.path.join(_wd, "src", "binaries", "{}_concept_ft.mod".format(ds_name))
-    return _g, _md, _wd
-
-
-def build_label_graph(_graph):
-    def_query = '''SELECT ?a ?b
-                   WHERE {?a rdfs:label ?b .
-                   FILTER(!isBlank(?a))}
-                   ORDER BY ?a'''
-    _q_res = _graph.query(def_query)
-    _label_list = []
-    _map = {}
-    for res in _q_res:
-        u = res[0].toPython()
-        if 'NCI' in u:
-            _map[u] = res[1].value
-            _label_list.append(res[1].value)
-        elif 'MA' in u:
-            _map[u] = res[1].value
-            _label_list.append(res[1].value)
-    return _map, _label_list
-
-
 def build_edge_graph(_graph, _fname):
     subclass_query = '''SELECT ?h ?t
                         WHERE {
@@ -100,6 +71,25 @@ def build_edge_graph(_graph, _fname):
     return _triples
 
 
+def build_label_graph(_graph):
+    def_query = '''SELECT ?a ?b
+                   WHERE {?a rdfs:label ?b .
+                   FILTER(!isBlank(?a))}
+                   ORDER BY ?a'''
+    _q_res = _graph.query(def_query)
+    _label_list = []
+    _map = {}
+    for res in _q_res:
+        u = res[0].toPython()
+        if 'NCI' in u:
+            _map[u] = res[1].value
+            _label_list.append(res[1].value)
+        elif 'MA' in u:
+            _map[u] = res[1].value
+            _label_list.append(res[1].value)
+    return _map, _label_list
+
+
 def create_triple_indices(_triples):
     _all_subs = list(set(_triples['sub'].tolist()))
     _all_obs = list(set(_triples['obj'].tolist()))
@@ -118,6 +108,18 @@ def create_triple_indices(_triples):
     _triples['tail_idx'] = _triples['obj'].apply(lambda x: _ent_idx[x])
     _all_trips = _triples[['head_idx', 'rel_idx', 'tail_idx']]
     return _ent_idx, _rel_idx, _all_trips
+
+
+
+def load_graph(_name):
+    ds_name = _name.split(".")[0]
+    _wd = os.path.normpath(os.getcwd() + os.sep + os.pardir)
+    dd = os.path.join(_wd, "data", "anatomy-dataset")
+    _g = Graph()
+    _g.parse(os.path.join(dd, _name))
+    _md = os.path.join(_wd, "src", "binaries", "{}_concept_ft.mod".format(ds_name))
+    return _g, _md, _wd
+
 
 
 def load_node_features(_fname, _wd, _ent_idx):
@@ -139,14 +141,7 @@ def load_node_features(_fname, _wd, _ent_idx):
         for k in _node_features.keys():
             g.write('{}\t{}\t1\n'.format(k, _node_features[k]))
 
-
-def rand_bin_array(k, n):
-    arr = np.zeros(n)
-    arr[:k] = -1
-    np.random.shuffle(arr)
-    return arr
-
-
+            
 def mask_nodes(_fname, _ent_idx, _sid):
     _wd = os.path.normpath(os.getcwd() + os.sep + os.pardir)
     _n = len(_ent_idx.keys())
@@ -164,6 +159,15 @@ def mask_nodes(_fname, _ent_idx, _sid):
     _file_out = os.path.join(_wd, 'src', 'output', 'gcn',
                              'anatomy_single', _fname, 'raw', '{}_split_0.6_0.2_{}.npz'.format(_fname, _sid))
     np.savez(_file_out, **_all_labs)
+
+            
+
+def rand_bin_array(k, n):
+    arr = np.zeros(n)
+    arr[:k] = -1
+    np.random.shuffle(arr)
+    return arr
+
 
 
 def run(_fname):

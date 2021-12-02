@@ -12,51 +12,6 @@ from nltk.corpus import stopwords
 
 import camelsplit
 
-def query_ontology(_un, _pw, _qs, _endp):
-    """
-    A function to query the ontology and return financial definitions.
-    :param _un: The database username.
-    :param _pw: The database password.
-    :param _qs: The query type passed from the command line.
-    :param _endp: The SPARQL endpoint.
-    :return: A data frame of terms and definitions.
-    """
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    proxy_support = urllib.request.ProxyHandler({})
-    opener = urllib.request.build_opener(proxy_support,
-                                         urllib.request.HTTPSHandler(context=context))
-    urllib.request.install_opener(opener)
-    endpoint = RemoteEndpoint(
-        _endp,
-        user=_un,
-        passwd=_pw)
-    results = endpoint.select(_qs)
-    return results
-
-
-def find_edges(_x):
-    """
-    A function to find edges between entities.
-    :param _x: Input string to check for edge relationship.
-    :return: Binary flag if string contains an edge identifier.
-    """
-    _y = 0
-    if _x.find('has') is not -1:
-        _y += 1
-    return _y
-
-
-def un_camel(_x):
-    """
-    A function to parse camel-case term names.
-    :param _x: An input camel-cased string.
-    :return: The re-formatted input string.
-    """
-    return '_'.join(re.sub('(?!^)([A-Z][a-z]+)', r' \1', _x).split())
-
-
 def clean_document(_in_str):
     """
     A function to prepare a document for word vector training.
@@ -127,27 +82,67 @@ def clean_document_lower(_in_str):
     return _out_list
 
 
-def create_term(_str):
-    """
-    A function to make concept terms a unique token.
-    CHANGE LOG 2/18/2020: Adjusted the concept creation to keep abbreviations
-    at the head of concepts.
-    :param _str: Input string with spaces.
-    :return: String with spaces replaced by underscores.
-    """
-    _str = _str.replace("-", "_")
-    _str = _str.replace(" ", "_")
-    pttrn = '([A-Z][a-z]+){1}(_[A-Z][a-z]+[0-9]*)*$'
-    if re.match(pttrn, _str) and 'California' not in _str:
-        _str = _str.lower()
+def corpus_combination(_u, _p, _e, _q, _g, _reverse_definitions):
+    _corpus = []
+    _reverse_definitions = False
+    if _q == "concept":
+        corp0 = create_corpus(_u, _p, "ORIGINAL", _reverse_definitions, _e)
+        corp1 = create_corpus(_u, _p, "CONCEPT", _reverse_definitions, _e)
+        corp2 = create_corpus(_u, _p, "CONCEPT_INDIVIDUAL", _reverse_definitions, _e)
+        _corpus = _corpus + corp0 + corp1 + corp2
+    elif _q == "synonym":
+        corp0 = create_corpus(_u, _p, "ORIGINAL", _reverse_definitions, _e)
+        corp1 = create_corpus(_u, _p, "CONCEPT", _reverse_definitions, _e)
+        corp2 = create_corpus(_u, _p, "SYNONYM", _reverse_definitions, _e)
+        _corpus = _corpus + corp0 + corp1 + corp2
+    elif _q == "abbreviation":
+        corp0 = create_corpus(_u, _p, "ORIGINAL", _reverse_definitions, _e)
+        corp1 = create_corpus(_u, _p, "CONCEPT", _reverse_definitions, _e)
+        corp2 = create_corpus(_u, _p, "ABBREVIATION", _reverse_definitions, _e)
+        _corpus = _corpus + corp0 + corp1 + corp2
+    elif _q == "all":
+        corp0 = create_corpus(_u, _p, "ORIGINAL", _reverse_definitions, _e)
+        corp1 = create_corpus(_u, _p, "CONCEPT", _reverse_definitions, _e)
+        corp2 = create_corpus(_u, _p, "ABBREVIATION", _reverse_definitions, _e)
+        corp3 = create_corpus(_u, _p, "SYNONYM", _reverse_definitions, _e)
+        print('Synonym query: {f}'.format(f=len(corp3)))
+        corp5 = create_corpus(_u, _p, "CONCEPT_INDIVIDUAL", _reverse_definitions, _e)
+        _corpus = _corpus + corp0 + corp1 + corp2 + corp3 + corp5
     else:
-        str_lst = _str.split("_")
-        head = str_lst.pop(0)
-        str_lst = [j.lower() for j in str_lst]
-        str_lst.insert(0, head)
-        _str = "_".join(str_lst)
-    _str = _str.lower()
-    return _str
+        print("Invalid query parameters, please retry.")
+    if _g == 'bigram':
+        phrase = phrases.Phrases(_corpus, min_count=10)
+        bigram = phrases.Phraser(phrase)
+        _corpus = list(bigram[_corpus])
+    elif _g == 'trigram':
+        phrase = phrases.Phrases(_corpus, min_count=10)
+        bigram = phrases.Phraser(phrase)
+        trigram = phrases.Phrases(bigram[_corpus], min_count=2)
+        _corpus = list(trigram[bigram[_corpus]]) + _corpus
+    elif _g == 'quadgram':
+        print('Running quad detection')
+        phrase = phrases.Phrases(_corpus, min_count=10)
+        bigram = phrases.Phraser(phrase)
+        c1 = list(bigram[_corpus])
+        trigram = phrases.Phrases(bigram[_corpus], min_count=10)
+        c2 = list(trigram[bigram[_corpus]])
+        quadgram = phrases.Phrases(trigram[bigram[_corpus]], min_count=10)
+        c3 = list(quadgram[trigram[bigram[_corpus]]])
+        _corpus = c3 + c2 + c1 + _corpus
+    return _corpus
+
+
+def create_concepts(_user, _pw, _endp, _q):
+    """
+    :param _user: The database user name.
+    :param _pw: The database password.
+    :param _endp: The SPARQL endpoint.
+    :return: List of concepts in the ontology.
+    """
+    data = query_ontology(_user, _pw, _q, _endp)
+    data['concept'] = data['word'].apply(un_camel)
+    data['concept'] = data['concept'].apply(create_term)
+    return data['concept'].tolist()
 
 
 def create_corpus(_user, _pw, _query, _doub, _endp, _logging):
@@ -256,19 +251,6 @@ def create_corpus(_user, _pw, _query, _doub, _endp, _logging):
     return _corpus
 
 
-def create_concepts(_user, _pw, _endp, _q):
-    """
-    :param _user: The database user name.
-    :param _pw: The database password.
-    :param _endp: The SPARQL endpoint.
-    :return: List of concepts in the ontology.
-    """
-    data = query_ontology(_user, _pw, _q, _endp)
-    data['concept'] = data['word'].apply(un_camel)
-    data['concept'] = data['concept'].apply(create_term)
-    return data['concept'].tolist()
-
-
 def create_label_concepts(_user, _pw, _endp, _q):
     """
     :param _user: The database user name.
@@ -282,54 +264,28 @@ def create_label_concepts(_user, _pw, _endp, _q):
     return data['concept'].tolist()
 
 
-def corpus_combination(_u, _p, _e, _q, _g, _reverse_definitions):
-    _corpus = []
-    _reverse_definitions = False
-    if _q == "concept":
-        corp0 = create_corpus(_u, _p, "ORIGINAL", _reverse_definitions, _e)
-        corp1 = create_corpus(_u, _p, "CONCEPT", _reverse_definitions, _e)
-        corp2 = create_corpus(_u, _p, "CONCEPT_INDIVIDUAL", _reverse_definitions, _e)
-        _corpus = _corpus + corp0 + corp1 + corp2
-    elif _q == "synonym":
-        corp0 = create_corpus(_u, _p, "ORIGINAL", _reverse_definitions, _e)
-        corp1 = create_corpus(_u, _p, "CONCEPT", _reverse_definitions, _e)
-        corp2 = create_corpus(_u, _p, "SYNONYM", _reverse_definitions, _e)
-        _corpus = _corpus + corp0 + corp1 + corp2
-    elif _q == "abbreviation":
-        corp0 = create_corpus(_u, _p, "ORIGINAL", _reverse_definitions, _e)
-        corp1 = create_corpus(_u, _p, "CONCEPT", _reverse_definitions, _e)
-        corp2 = create_corpus(_u, _p, "ABBREVIATION", _reverse_definitions, _e)
-        _corpus = _corpus + corp0 + corp1 + corp2
-    elif _q == "all":
-        corp0 = create_corpus(_u, _p, "ORIGINAL", _reverse_definitions, _e)
-        corp1 = create_corpus(_u, _p, "CONCEPT", _reverse_definitions, _e)
-        corp2 = create_corpus(_u, _p, "ABBREVIATION", _reverse_definitions, _e)
-        corp3 = create_corpus(_u, _p, "SYNONYM", _reverse_definitions, _e)
-        print('Synonym query: {f}'.format(f=len(corp3)))
-        corp5 = create_corpus(_u, _p, "CONCEPT_INDIVIDUAL", _reverse_definitions, _e)
-        _corpus = _corpus + corp0 + corp1 + corp2 + corp3 + corp5
+def create_term(_str):
+    """
+    A function to make concept terms a unique token.
+    CHANGE LOG 2/18/2020: Adjusted the concept creation to keep abbreviations
+    at the head of concepts.
+    :param _str: Input string with spaces.
+    :return: String with spaces replaced by underscores.
+    """
+    _str = _str.replace("-", "_")
+    _str = _str.replace(" ", "_")
+    pttrn = '([A-Z][a-z]+){1}(_[A-Z][a-z]+[0-9]*)*$'
+    if re.match(pttrn, _str) and 'California' not in _str:
+        _str = _str.lower()
     else:
-        print("Invalid query parameters, please retry.")
-    if _g == 'bigram':
-        phrase = phrases.Phrases(_corpus, min_count=10)
-        bigram = phrases.Phraser(phrase)
-        _corpus = list(bigram[_corpus])
-    elif _g == 'trigram':
-        phrase = phrases.Phrases(_corpus, min_count=10)
-        bigram = phrases.Phraser(phrase)
-        trigram = phrases.Phrases(bigram[_corpus], min_count=2)
-        _corpus = list(trigram[bigram[_corpus]]) + _corpus
-    elif _g == 'quadgram':
-        print('Running quad detection')
-        phrase = phrases.Phrases(_corpus, min_count=10)
-        bigram = phrases.Phraser(phrase)
-        c1 = list(bigram[_corpus])
-        trigram = phrases.Phrases(bigram[_corpus], min_count=10)
-        c2 = list(trigram[bigram[_corpus]])
-        quadgram = phrases.Phrases(trigram[bigram[_corpus]], min_count=10)
-        c3 = list(quadgram[trigram[bigram[_corpus]]])
-        _corpus = c3 + c2 + c1 + _corpus
-    return _corpus
+        str_lst = _str.split("_")
+        head = str_lst.pop(0)
+        str_lst = [j.lower() for j in str_lst]
+        str_lst.insert(0, head)
+        _str = "_".join(str_lst)
+    _str = _str.lower()
+    return _str
+
 
 
 def finalize_corpus(_wd, _user, _password, _query, _endp, _web, _gram, _logging):
@@ -411,3 +367,52 @@ def finalize_corpus(_wd, _user, _password, _query, _endp, _web, _gram, _logging)
         for item in concepts:
             f.write("%s\n" % item)
     return corpus, concepts
+
+
+def find_edges(_x):
+    """
+    A function to find edges between entities.
+    :param _x: Input string to check for edge relationship.
+    :return: Binary flag if string contains an edge identifier.
+    """
+    _y = 0
+    if _x.find('has') is not -1:
+        _y += 1
+    return _y
+
+
+
+def query_ontology(_un, _pw, _qs, _endp):
+    """
+    A function to query the ontology and return financial definitions.
+    :param _un: The database username.
+    :param _pw: The database password.
+    :param _qs: The query type passed from the command line.
+    :param _endp: The SPARQL endpoint.
+    :return: A data frame of terms and definitions.
+    """
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    proxy_support = urllib.request.ProxyHandler({})
+    opener = urllib.request.build_opener(proxy_support,
+                                         urllib.request.HTTPSHandler(context=context))
+    urllib.request.install_opener(opener)
+    endpoint = RemoteEndpoint(
+        _endp,
+        user=_un,
+        passwd=_pw)
+    results = endpoint.select(_qs)
+    return results
+
+
+def un_camel(_x):
+    """
+    A function to parse camel-case term names.
+    :param _x: An input camel-cased string.
+    :return: The re-formatted input string.
+    """
+    return '_'.join(re.sub('(?!^)([A-Z][a-z]+)', r' \1', _x).split())
+
+
+

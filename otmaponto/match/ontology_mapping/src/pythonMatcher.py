@@ -5,23 +5,6 @@ from AlignmentFormat import serialize_mapping_to_tmp_file
 from collections import defaultdict
 
 
-def match_rdflib(source_graph, target_graph, input_alignment):
-    # a very simple label matcher:
-    alignment = []
-
-    label_to_uri = defaultdict(list)
-    for s, p, o in source_graph.triples((None, RDFS.label, None)):
-        if isinstance(s, URIRef):
-            label_to_uri[str(o)].append(str(s))
-
-    for s, p, o in target_graph.triples((None, RDFS.label, None)):
-        if isinstance(s, URIRef) and str(o) in label_to_uri:
-            for one_uri in label_to_uri[str(o)]:
-                alignment.append((one_uri, str(s), "=", 1.0))
-    return alignment
-    # return [('http://one.de', 'http://two.de', '=', 1.0)]
-
-
 def get_file_from_url(location):
     from urllib.parse import unquote, urlparse
     from urllib.request import url2pathname, urlopen
@@ -31,7 +14,7 @@ def get_file_from_url(location):
     else:
         return urlopen(location)
 
-
+    
 def match(source_url, target_url, input_alignment_url):
     logging.info("Python matcher info: Match " + source_url + " to " + target_url)
 
@@ -62,6 +45,27 @@ def match(source_url, target_url, input_alignment_url):
 
     alignment_file_url = serialize_mapping_to_tmp_file(resulting_alignment)
     return alignment_file_url
+
+    
+    
+
+def match_rdflib(source_graph, target_graph, input_alignment):
+    # a very simple label matcher:
+    alignment = []
+
+    label_to_uri = defaultdict(list)
+    for s, p, o in source_graph.triples((None, RDFS.label, None)):
+        if isinstance(s, URIRef):
+            label_to_uri[str(o)].append(str(s))
+
+    for s, p, o in target_graph.triples((None, RDFS.label, None)):
+        if isinstance(s, URIRef) and str(o) in label_to_uri:
+            for one_uri in label_to_uri[str(o)]:
+                alignment.append((one_uri, str(s), "=", 1.0))
+    return alignment
+    # return [('http://one.de', 'http://two.de', '=', 1.0)]
+
+
 
 
 def main(argv):

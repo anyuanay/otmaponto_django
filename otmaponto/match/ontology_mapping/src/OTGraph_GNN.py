@@ -83,6 +83,45 @@ def emb_concept_clndLabel(clndLabel, embs_model):
             embs.append(embs_model.wv[z])
     
         return np.array(embs).mean(0)
+    
+
+# GNN embedding on an ontology graph
+def gnn_embeddings_infomax(stellargraph, emb_dims, activations, epochs):
+    """
+        input: stellargraph, a stellarGraph created from an ontology graph
+               emb_dims: the list of dimensions of the base GCN layers
+               activations: the list of activtions corresponding to the GCN layers
+               epoch: number of training epochs
+        output: a DataFrame with the index corresponding to stellargraph.nodes and other columns corresponding to embeddings
+    """
+    fullbatch_generator = FullBatchNodeGenerator(stellargraph, sparse=False)
+    
+    # base GCN model with one layer in emb_dim
+    gcn_model = GCN(layer_sizes=emb_dims, activations=activations, generator=fullbatch_generator)
+    
+    corrupted_generator = CorruptedGenerator(fullbatch_generator)
+    gen = corrupted_generator.flow(stellargraph.nodes())
+    
+    infomax = DeepGraphInfomax(gcn_model, corrupted_generator)
+    x_in, x_out = infomax.in_out_tensors()
+    
+    model = Model(inputs=x_in, outputs=x_out)
+    model.compile(loss=tf.nn.sigmoid_cross_entropy_with_logits, optimizer=Adam(learning_rate=1e-3))
+    
+    logging.info("Fitting the GNN on the ontology graph...")
+    es=EarlyStopping(monitor='loss', min_delta=0, patience=20)
+    history = model.fit(gen, epochs=epochs, verbose=0, callbacks=[es])
+    
+    x_emb_in, x_emb_out = gcn_model.in_out_tensors()
+    x_out = tf.squeeze(x_emb_out, axis=0)
+    emb_model = Model(inputs=x_emb_in, outputs=x_out)
+    
+    all_embeddings = emb_model.predict(fullbatch_generator.flow(stellargraph.nodes()))
+    
+    all_embeddings_df = pd.DataFrame(all_embeddings, index=stellargraph.nodes())
+    
+    return all_embeddings_df    
+    
 
 # make a DataFrame of concept nodes with embeddings as features; each node identified by its uri
 def node_features_from_clndLabel_embeddings(label_clnd_uris, embs_model, dim):
@@ -163,44 +202,6 @@ def stellar_from_rdf_edges(rdfGraph):
 
 
 # # Apply GNN to the StellarGraphs of the Ontologies to Get Concept Node Embeddings
-
-# GNN embedding on an ontology graph
-def gnn_embeddings_infomax(stellargraph, emb_dims, activations, epochs):
-    """
-        input: stellargraph, a stellarGraph created from an ontology graph
-               emb_dims: the list of dimensions of the base GCN layers
-               activations: the list of activtions corresponding to the GCN layers
-               epoch: number of training epochs
-        output: a DataFrame with the index corresponding to stellargraph.nodes and other columns corresponding to embeddings
-    """
-    fullbatch_generator = FullBatchNodeGenerator(stellargraph, sparse=False)
-    
-    # base GCN model with one layer in emb_dim
-    gcn_model = GCN(layer_sizes=emb_dims, activations=activations, generator=fullbatch_generator)
-    
-    corrupted_generator = CorruptedGenerator(fullbatch_generator)
-    gen = corrupted_generator.flow(stellargraph.nodes())
-    
-    infomax = DeepGraphInfomax(gcn_model, corrupted_generator)
-    x_in, x_out = infomax.in_out_tensors()
-    
-    model = Model(inputs=x_in, outputs=x_out)
-    model.compile(loss=tf.nn.sigmoid_cross_entropy_with_logits, optimizer=Adam(learning_rate=1e-3))
-    
-    logging.info("Fitting the GNN on the ontology graph...")
-    es=EarlyStopping(monitor='loss', min_delta=0, patience=20)
-    history = model.fit(gen, epochs=epochs, verbose=0, callbacks=[es])
-    
-    x_emb_in, x_emb_out = gcn_model.in_out_tensors()
-    x_out = tf.squeeze(x_emb_out, axis=0)
-    emb_model = Model(inputs=x_emb_in, outputs=x_out)
-    
-    all_embeddings = emb_model.predict(fullbatch_generator.flow(stellargraph.nodes()))
-    
-    all_embeddings_df = pd.DataFrame(all_embeddings, index=stellargraph.nodes())
-    
-    return all_embeddings_df
-
 
 
 

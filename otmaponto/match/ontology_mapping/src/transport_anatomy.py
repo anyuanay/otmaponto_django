@@ -14,6 +14,28 @@ from sklearn.metrics import roc_curve, auc
 from models.MapOT import GWTransport
 
 
+def create_test_features(_dd, _gold):
+    with open(os.path.join(_dd, 'human_vectors.json'), 'rb') as v1:
+        _human_vectors = json.load(v1)
+    with open(os.path.join(_dd, 'mouse_vectors.json'), 'rb') as v2:
+        _mouse_vectors = json.load(v2)
+    with open(os.path.join(_dd, 'human_uri_keys.json'), 'rb') as v1:
+        _human_uris = json.load(v1)
+    with open(os.path.join(_dd, 'mouse_uri_keys.json'), 'rb') as v2:
+        _mouse_uris = json.load(v2)
+    _human_test = []
+    _mouse_test = []
+    print('Testing on {} pairs'.format(len(list(_gold.keys()))))
+    for j in list(_gold.keys()):
+        _mouse_test.append(_mouse_vectors[_mouse_uris[j]])
+        _human_test.append(_human_vectors[_human_uris[_gold[j]]])
+    _human_test = torch.tensor(_human_test)
+    _mouse_test = torch.tensor(_mouse_test)
+    return _human_test, _mouse_test, _human_uris, _mouse_uris
+
+
+
+
 def load_gold_labels(_fn, _src_idx, _trg_idx, _src_uri, _trg_uri):
     _wd = os.path.normpath(os.getcwd() + os.sep + os.pardir)
     dd = os.path.join(_wd, "data", "anatomy-dataset")
@@ -76,25 +98,6 @@ def load_vectors(_dd, _mt, _ft, _reas):
         _trg_uri = json.load(v1)
     return _hv, _mv, _src_idx, _trg_idx, _src_uri, _trg_uri
 
-
-def create_test_features(_dd, _gold):
-    with open(os.path.join(_dd, 'human_vectors.json'), 'rb') as v1:
-        _human_vectors = json.load(v1)
-    with open(os.path.join(_dd, 'mouse_vectors.json'), 'rb') as v2:
-        _mouse_vectors = json.load(v2)
-    with open(os.path.join(_dd, 'human_uri_keys.json'), 'rb') as v1:
-        _human_uris = json.load(v1)
-    with open(os.path.join(_dd, 'mouse_uri_keys.json'), 'rb') as v2:
-        _mouse_uris = json.load(v2)
-    _human_test = []
-    _mouse_test = []
-    print('Testing on {} pairs'.format(len(list(_gold.keys()))))
-    for j in list(_gold.keys()):
-        _mouse_test.append(_mouse_vectors[_mouse_uris[j]])
-        _human_test.append(_human_vectors[_human_uris[_gold[j]]])
-    _human_test = torch.tensor(_human_test)
-    _mouse_test = torch.tensor(_mouse_test)
-    return _human_test, _mouse_test, _human_uris, _mouse_uris
 
 
 def lookup_pairs(_pairs, _gold, _dd, _scores):

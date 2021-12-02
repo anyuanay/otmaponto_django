@@ -5,7 +5,111 @@ import tempfile
 from six.moves import urllib
 from xml.sax.saxutils import quoteattr
 
+# Parser
+
+
+class AlignmentHandler(object):
+    def __init__(self):
+        self.base = "{http://knowledgeweb.semanticweb.org/heterogeneity/alignment}"
+        self.rdf = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}"
+        self.text = ""
+        self.alignment = []
+        self.one_cell = ["", "", "", ""]
+        self.extension = {}
+        self.onto1 = ""
+        self.onto2 = ""
+        self.onto_temp = ["", ""]
+        self.used_tags = set(
+            [
+                self.base + name
+                for name in [
+                    "entity1",
+                    "entity2",
+                    "relation",
+                    "measure",
+                    "Cell",
+                    "map",
+                    "Alignment",
+                    "xml",
+                    "level",
+                    "type",
+                    "onto1",
+                    "onto2",
+                    "Ontology",
+                    "location",
+                    "formalism",
+                    "Formalism",
+                ]
+            ]
+        )
+        self.used_tags.add(self.rdf + "RDF")
+        
+    def close(self):
+        pass
+
+    def data(self, chars):
+        self.text += chars
+
+    def end(self, name):
+        if name == self.base + "relation":
+            self.one_cell[2] = self.text.strip()
+        elif name == self.base + "measure":
+            self.one_cell[3] = self.text.strip()
+        elif name == self.base + "Cell":
+            self.alignment.append(self.one_cell)
+            self.one_cell = ["", "", "", ""]
+        elif name == self.base + "location":
+            self.onto_temp[1] = self.text.strip()
+        elif name == self.base + "onto1":
+            if self.onto_temp[0] == "" and self.onto_temp[1] == "":
+                self.onto_temp[0] = self.text.strip()
+            self.onto1 = list(self.onto_temp)
+        elif name == self.base + "onto2":
+            if self.onto_temp[0] == "" and self.onto_temp[1] == "":
+                self.onto_temp[0] = self.text.strip()
+            self.onto2 = list(self.onto_temp)
+        elif name == self.base + "measure":
+            self.one_cell[3] = self.text.strip()
+        elif name not in self.used_tags:
+            key = name[name.index("}") + 1 :]
+            self.extension[key] = self.text
+
+
+    def start(self, name, attrs):
+        if name == self.base + "entity1":
+            self.one_cell[0] = attrs[self.rdf + "resource"]  # .encode('utf-8')
+        elif name == self.base + "entity2":
+            self.one_cell[1] = attrs[self.rdf + "resource"]  # .encode('utf-8')
+        elif name == self.base + "Ontology":
+            self.onto_temp[0] = attrs[self.rdf + "about"]  # .encode('utf-8')
+        self.text = ""
+
+            
 # Serialization
+
+def __get_extension_string(extension):
+    ext_string = ""
+    if extension is None:
+        return ext_string
+    for key, value in extension:
+        ext_string += "  <" + key + ">" + value + "</" + key + ">\n"
+    return ext_string
+
+def __get_mapping_string(source, target, relation, confidence):
+    return """
+  <map>
+    <Cell>
+      <entity1 rdf:resource=%s/>
+      <entity2 rdf:resource=%s/>
+      <relation>%s</relation>
+      <measure rdf:datatype="xsd:float">%s</measure>
+    </Cell>
+  </map>""" % (
+        quoteattr(source),
+        quoteattr(target),
+        relation,
+        confidence,
+    )
 
 
 def __get_ontology_string(onto, name):
@@ -32,14 +136,6 @@ def __get_ontology_string(onto, name):
     return onto_string
 
 
-def __get_extension_string(extension):
-    ext_string = ""
-    if extension is None:
-        return ext_string
-    for key, value in extension:
-        ext_string += "  <" + key + ">" + value + "</" + key + ">\n"
-    return ext_string
-
 
 def __get_xml_intro(onto_one=None, onto_two=None, extension=None):
     return (
@@ -57,28 +153,49 @@ def __get_xml_intro(onto_one=None, onto_two=None, extension=None):
     )
 
 
-def __get_mapping_string(source, target, relation, confidence):
-    return """
-  <map>
-    <Cell>
-      <entity1 rdf:resource=%s/>
-      <entity2 rdf:resource=%s/>
-      <relation>%s</relation>
-      <measure rdf:datatype="xsd:float">%s</measure>
-    </Cell>
-  </map>""" % (
-        quoteattr(source),
-        quoteattr(target),
-        relation,
-        confidence,
-    )
-
 
 def __get_xml_outro():
     return """
   </Alignment>
 </rdf:RDF>
 """
+
+
+def parse_mapping_from_file(source):
+    """
+    Parses a alignment from a filename or file object.
+    :param source: is a filename or file object containing a alignment in alignment format
+    :return: (alignment: list of (source, target, relation, confidence), onto1 as ((id, url, formalismName, formalismURI),
+    onto2 similar to onto1, extension (iterable of key, values) )
+    """
+    handler = AlignmentHandler()
+    etree.parse(source, etree.XMLParser(target=handler))
+    return handler.alignment, handler.onto1, handler.onto2, handler.extension
+
+
+# if __name__ == "__main__":
+#     logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.INFO)
+#     logging.info("Generate")
+#     t = [('http://test.dwfwegwegwegtrh/12&34_' + str(i), 'http://test2.dwfwegwegwegtrh/' + str(i), '=', 1.0)
+#       for i in range(200)]
+#     logging.info("write")
+#     serialize_mapping_to_file('test.txt', t)
+#     # bla = serialize_mapping_to_tmp_file(t)
+#     # logging.info(bla)
+
+
+
+def parse_mapping_from_string(s):
+    """
+    Parses a alignment from a given string.
+    :param s: a string representing a alignment in alignment format
+    :return: (alignment: list of (source, target, relation, confidence), onto1 as ((id, url, formalismName, formalismURI),
+    onto2 similar to onto1, extension (iterable of key, values) )
+    """
+    handler = AlignmentHandler()
+    etree.parse(BytesIO(s.encode("utf-8")), etree.XMLParser(target=handler))
+    return handler.alignment, handler.onto1, handler.onto2, handler.extension
+
 
 
 def serialize_mapping_to_file(
@@ -120,116 +237,3 @@ def serialize_mapping_to_tmp_file(
         out_file.write(__get_xml_outro())
     return urllib.parse.urljoin("file:", urllib.request.pathname2url(out_file.name))
 
-
-# Parser
-
-
-class AlignmentHandler(object):
-    def __init__(self):
-        self.base = "{http://knowledgeweb.semanticweb.org/heterogeneity/alignment}"
-        self.rdf = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}"
-        self.text = ""
-        self.alignment = []
-        self.one_cell = ["", "", "", ""]
-        self.extension = {}
-        self.onto1 = ""
-        self.onto2 = ""
-        self.onto_temp = ["", ""]
-        self.used_tags = set(
-            [
-                self.base + name
-                for name in [
-                    "entity1",
-                    "entity2",
-                    "relation",
-                    "measure",
-                    "Cell",
-                    "map",
-                    "Alignment",
-                    "xml",
-                    "level",
-                    "type",
-                    "onto1",
-                    "onto2",
-                    "Ontology",
-                    "location",
-                    "formalism",
-                    "Formalism",
-                ]
-            ]
-        )
-        self.used_tags.add(self.rdf + "RDF")
-
-    def start(self, name, attrs):
-        if name == self.base + "entity1":
-            self.one_cell[0] = attrs[self.rdf + "resource"]  # .encode('utf-8')
-        elif name == self.base + "entity2":
-            self.one_cell[1] = attrs[self.rdf + "resource"]  # .encode('utf-8')
-        elif name == self.base + "Ontology":
-            self.onto_temp[0] = attrs[self.rdf + "about"]  # .encode('utf-8')
-        self.text = ""
-
-    def end(self, name):
-        if name == self.base + "relation":
-            self.one_cell[2] = self.text.strip()
-        elif name == self.base + "measure":
-            self.one_cell[3] = self.text.strip()
-        elif name == self.base + "Cell":
-            self.alignment.append(self.one_cell)
-            self.one_cell = ["", "", "", ""]
-        elif name == self.base + "location":
-            self.onto_temp[1] = self.text.strip()
-        elif name == self.base + "onto1":
-            if self.onto_temp[0] == "" and self.onto_temp[1] == "":
-                self.onto_temp[0] = self.text.strip()
-            self.onto1 = list(self.onto_temp)
-        elif name == self.base + "onto2":
-            if self.onto_temp[0] == "" and self.onto_temp[1] == "":
-                self.onto_temp[0] = self.text.strip()
-            self.onto2 = list(self.onto_temp)
-        elif name == self.base + "measure":
-            self.one_cell[3] = self.text.strip()
-        elif name not in self.used_tags:
-            key = name[name.index("}") + 1 :]
-            self.extension[key] = self.text
-
-    def data(self, chars):
-        self.text += chars
-
-    def close(self):
-        pass
-
-
-def parse_mapping_from_string(s):
-    """
-    Parses a alignment from a given string.
-    :param s: a string representing a alignment in alignment format
-    :return: (alignment: list of (source, target, relation, confidence), onto1 as ((id, url, formalismName, formalismURI),
-    onto2 similar to onto1, extension (iterable of key, values) )
-    """
-    handler = AlignmentHandler()
-    etree.parse(BytesIO(s.encode("utf-8")), etree.XMLParser(target=handler))
-    return handler.alignment, handler.onto1, handler.onto2, handler.extension
-
-
-def parse_mapping_from_file(source):
-    """
-    Parses a alignment from a filename or file object.
-    :param source: is a filename or file object containing a alignment in alignment format
-    :return: (alignment: list of (source, target, relation, confidence), onto1 as ((id, url, formalismName, formalismURI),
-    onto2 similar to onto1, extension (iterable of key, values) )
-    """
-    handler = AlignmentHandler()
-    etree.parse(source, etree.XMLParser(target=handler))
-    return handler.alignment, handler.onto1, handler.onto2, handler.extension
-
-
-# if __name__ == "__main__":
-#     logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.INFO)
-#     logging.info("Generate")
-#     t = [('http://test.dwfwegwegwegtrh/12&34_' + str(i), 'http://test2.dwfwegwegwegtrh/' + str(i), '=', 1.0)
-#       for i in range(200)]
-#     logging.info("write")
-#     serialize_mapping_to_file('test.txt', t)
-#     # bla = serialize_mapping_to_tmp_file(t)
-#     # logging.info(bla)
