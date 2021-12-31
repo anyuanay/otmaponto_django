@@ -46,6 +46,92 @@ class Mapper:
         match(source_url, target_url, self.embs_model, output_url, None)
 
 
+
+# Compute WDs between a uri and a list of candidate target in a DataFrame
+def compute_wds_uri_targets(slabel_clnd_uris, source_graph, tlabel_clnd_uris, target_graph, 
+                            candidates_df, source_uri, embs_model):
+    '''
+        input: slabel_clnd_uris: source DataFrame with 'label', 'uri', 'clndLabel'
+               source_graph: source RDF graph
+               tlabel_clnd_uris: target DataFrame with 'label', 'uri', 'clndLabel'
+               target_graph: target RDF graph
+               candidates_df: candidate mappings from source to target 
+                              'source', 'source_label', 'target', 'target_label'
+               source_uri: a source uri
+        output: dictionary uri:wd for each associated candidate target for the given source
+    '''
+    
+    sclndLabel = slabel_clnd_uris[slabel_clnd_uris.uri == source_uri].clndLabel.tolist()[0]
+    srelated = maponto.query_related_information(source_uri, source_graph)
+    
+    target_candids = candidates_df[candidates_df.source == source_uri].target.tolist()
+    
+    source_targets_wds = defaultdict(float)
+    
+    
+    for target in target_candids:
+        logging.info("============" + source_uri + "==========")
+        wd_total = 0
+        count = 0
+        
+        tclndLabel = tlabel_clnd_uris[tlabel_clnd_uris.uri == target].clndLabel.tolist()[0]
+        trelated = maponto.query_related_information(target, target_graph)
+        
+        # compute the wd distance based on source and target names
+        wd = wd_between_names(sclndLabel, tclndLabel, embs_model)
+        
+        wd_total += wd
+        count += 1
+        
+        # compute the wd distance between superclasses
+        wd = wd_between_superclasses(srelated, trelated, slabel_clnd_uris, tlabel_clnd_uris, embs_model)
+        if wd > 0:
+            wd_total += wd
+            count += 1
+            
+        # compute the wd distance between subclasses
+        wd = wd_between_subclasses(srelated, trelated, slabel_clnd_uris, tlabel_clnd_uris, embs_model)
+        if wd > 0:
+            wd_total += wd
+            count += 1
+            
+        # compute the wd distance between disjoint
+        wd = wd_between_disjoint(srelated, trelated, slabel_clnd_uris, tlabel_clnd_uris, embs_model)
+        if wd > 0:
+            wd_total += wd
+            count += 1
+            
+        # compute the wd distance between equivalents
+        wd = wd_between_equivalents(srelated, trelated, slabel_clnd_uris, tlabel_clnd_uris, embs_model)
+        if wd > 0:
+            wd_total += wd
+            count += 1
+            
+        # compute the wd distance between comments
+        wd = wd_between_comments(srelated, trelated, embs_model)
+        if wd > 0:
+            wd_total += wd
+            count += 1
+            
+        # compute the wd distance between datatype properties
+        wd = wd_between_datatypes(srelated, trelated, embs_model)
+        if wd > 0:
+            wd_total += wd
+            count += 1
+        
+        # compute the wd distance between object properties
+        wd = wd_between_objectproperties(srelated, trelated, embs_model)
+        if wd > 0:
+            wd_total += wd
+            count += 1
+        
+        # associate target with average wd
+        source_targets_wds[target] = wd_total / count
+        logging.info("compute_wds_uri_targets(): average wd: {}".format(wd_total / count))
+    
+    return source_uri, sorted(source_targets_wds.items(), key=lambda kv: kv[1])        
+        
+        
 # combine mappings for concepts, object properties, and datatype properties
 def ensemble_map(source_url, target_url, embs_model):
     
@@ -160,6 +246,53 @@ def ensemble_map(source_url, target_url, embs_model):
     return ensemble_align.reset_index(drop=True)        
      
 
+# ensemble matching through OT + linguistic + WD
+def ensemble_map_OT_WD(slabel_clnd_uris, tlabel_clnd_uris, source_graph, target_graph, embs_model):
+    """
+    MAPPING BY LEVEL_1. LABEL STRING, LEVEL_2. LABLE SYNONYMS, LEVEL_3.1. JACCARD, 
+               AND LEVEL_6. OT on ALL; clean up matching by WD
+        input: slabel_clnd_uris: DataFrame containing source concepts and uris with columns {'label', 'uri', 'clndLabel'}
+               tlabel_clnd_uris: DataFrame containing target concepts and uris with columns {'label', 'uri', 'clndLabel'}
+               source_graph: source RDF graph
+               target_graph: target RDF graph
+               embs_model: pre-trained embedding model
+        output: DataFrame containing mappings with columns {'source', 'source_label', 'target', 'target_label'}
+    """
+    
+    # prepare an empty DataFrame for holding the predicted matchings
+    preds_align = pd.DataFrame({'source':[], 'source_label':[], \
+                            'target':[], 'target_label':[]})
+
+    # matching based on label strings
+    current_align = maponto.match_concept_labels(slabel_clnd_uris, tlabel_clnd_uris, None )
+    preds_align = pd.concat([preds_align, current_align]).reset_index(drop=True)
+
+    # extract the concepts that are not matched so far
+    slabel_clnd_uris_rest = extract_rest_concepts(slabel_clnd_uris, current_align, 'source')
+    tlabel_clnd_uris_rest = extract_rest_concepts(tlabel_clnd_uris, current_align, 'target')
+
+    # matching based on label synonyms
+    current_align = maponto.match_label_synonyms(slabel_clnd_uris_rest, tlabel_clnd_uris_rest, None)
+    preds_align = pd.concat([preds_align, current_align]).reset_index(drop=True)
+
+    # extract the concepts that are not matched so far
+    slabel_clnd_uris_rest = extract_rest_concepts(slabel_clnd_uris_rest, current_align, 'source')
+    tlabel_clnd_uris_rest = extract_rest_concepts(tlabel_clnd_uris_rest, current_align, 'target')
+
+    # matching based on jaccard similarity between sets of words in source and target concepts
+    current_align = maponto.match_concept_labels_jac(slabel_clnd_uris_rest, tlabel_clnd_uris_rest, None)
+    preds_align = pd.concat([preds_align, current_align]).reset_index(drop=True)
+
+    # matching between all concepts based on embeddings by OT
+    ot_align_all = maponto.match_label_embeddings_OT_raw_nonUniform(slabel_clnd_uris, tlabel_clnd_uris, embs_model, \
+                            maponto.make_mappings_topn, 10, 0.001, None)
+
+    # get the OT predicted matchings excluding the matchings based on linguistic features
+    ot_align_rest = ot_align_all[~ot_align_all.source.isin(preds_align.source)].reset_index(drop=True)
+
+    return preds_align, ot_align_rest    
+
+    
 
 # extract the concepts that are not matched so far
 def extract_rest_concepts(label_clnd_uris, current_align, where):
@@ -176,6 +309,171 @@ def extract_rest_concepts(label_clnd_uris, current_align, where):
     else:
         return None
 
+  
+# generate mappings from a list of candidates
+def generate_mappings_from_candidates(slabel_clnd_uris, source_graph, tlabel_clnd_uris, 
+                                      target_graph, candidate_df, thresh, embs_model):
+    '''
+        input: 
+               slabel_clnd_uris: source DataFrame with 'label', 'uri', 'clndLabel'
+               source_graph: source RDF graph
+               tlabel_clnd_uris: target DataFrame with 'label', 'uri', 'clndLabel'
+               target_graph: target RDF graph
+               candidates_df: candidate mappings from source to target 
+                              'source', 'source_label', 'target', 'target_label'
+               thresh: percentile number to cut off candidates, for example, 5 stands for 5%
+               embs_model: pre-trained embeddings
+        output: mapping dataframe with 'source', 'source_label', 'target', 'target_label'
+    '''
+    
+    # get a list of unique source candiate uris
+    source_rest = candidate_df.source.unique()
+
+    threshold = generate_mapping_threshold(slabel_clnd_uris, tlabel_clnd_uris, thresh, embs_model)
+    source_list = []
+    source_label_list = []
+    target_list = []
+    target_label_list = []
+
+    for srest in source_rest:
+        source, wds = compute_wds_uri_targets(slabel_clnd_uris, source_graph, tlabel_clnd_uris, 
+                                              target_graph, candidate_df, srest, embs_model)
+        
+        '''
+        # for printout
+        output = "[" + source + ":\n"
+        for i, uri_wd in enumerate(wds):
+            output = output + str(i) + " :" + str(uri_wd) + ",\n"
+        output = output[:-2] + "]\n"
+        '''
+        if wds[0][1] < threshold:
+            source_list.append(source)
+            source_label_list.append(slabel_clnd_uris[slabel_clnd_uris.uri == source].label.values[0])
+            target_uri = wds[0][0]
+            target_list.append(target_uri)
+            target_lab = tlabel_clnd_uris[tlabel_clnd_uris.uri == target_uri].label.values[0]
+            target_label_list.append(target_lab)
+            
+    # make the output DataFrame
+    return pd.DataFrame({'source':source_list, 'source_label':source_label_list, 
+                        'target':target_list, 'target_label':target_label_list})
+        
+
+
+    
+# compute the distance threshold for cutting off candidates
+def generate_mapping_threshold(slabel_clnd_uris, tlabel_clnd_uris, thresh, embs_model):
+    '''
+        input: slabel_clnd_uris: DataFrame containing source concepts and uris 
+               with columns {'label', 'uri', 'clndLabel'}
+               tlabel_clnd_uris: DataFrame containing target concepts and uris 
+               with columns {'label', 'uri', 'clndLabel'}
+               thresh: percentile number to cut off candidates, for example, 5 stands for 5%
+               embs_model: pre-trained embedding model
+        output: threshold: a distance for cutting off candidates
+    '''
+    slabel_list = slabel_clnd_uris.clndLabel.tolist()
+    tlabel_list = tlabel_clnd_uris.clndLabel.tolist()
+
+    sembs = []
+    tembs = []
+    for slabel in slabel_list:
+        sembs.append(maponto.average_embeddings(slabel, 300, embs_model))
+    for tlabel in tlabel_list:
+        tembs.append(maponto.average_embeddings(tlabel, 300, embs_model))
+
+    costs_raw = ot.dist(np.array(sembs), np.array(tembs))
+    
+    threshold = np.percentile(costs_raw.flatten(), thresh)
+
+    return threshold    
+    
+    
+# get the labels including related object labels from all related object properties
+def get_objectproperty_labels(related_df):
+    '''
+        input: related_df: a DataFrame containing related information for a concept
+               ['relation', 'related', 'what']
+        output: a list of object property labels without duplicated relations
+    '''
+    ans = []
+    
+    # a list of relations
+    relations = []
+    # a list of related
+    related = []
+    
+    # allValuesFrom
+    preds = related_df[related_df.what == 'allValuesFrom'].relation.tolist()
+    objs = related_df[related_df.what == 'allValuesFrom'].related.tolist()
+    
+    for i, pred in enumerate(preds):
+        if pred not in relations:
+            relations.append(pred)
+            related.append(objs[i])
+            
+    # someValuesFrom
+    preds = related_df[related_df.what == 'someValuesFrom'].relation.tolist()
+    objs = related_df[related_df.what == 'someValuesFrom'].related.tolist()
+    
+    for i, pred in enumerate(preds):
+        if pred not in relations:
+            relations.append(pred)
+            related.append(objs[i]) 
+            
+    # domain
+    preds = related_df[related_df.what == 'domain'].relation.tolist()
+    objs = related_df[related_df.what == 'domain'].related.tolist()
+    
+    for i, pred in enumerate(preds):
+        if pred not in relations:
+            relations.append(pred)
+            related.append(objs[i])
+            
+    # range
+    preds = related_df[related_df.what == 'range'].relation.tolist()
+    objs = related_df[related_df.what == 'range'].related.tolist()
+    
+    for i, pred in enumerate(preds):
+        if pred not in relations:
+            relations.append(pred)
+            related.append(objs[i])
+            
+    # owl:maxCardinality
+    preds = related_df[related_df.what == 'owl:maxCardinality'].relation.tolist()
+    objs = related_df[related_df.what == 'owl:maxCardinality'].related.tolist()
+    
+    for i, pred in enumerate(preds):
+        if pred not in relations:
+            relations.append(pred)
+            related.append(objs[i])
+            
+    # owl:minCardinality
+    preds = related_df[related_df.what == 'owl:minCardinality'].relation.tolist()
+    objs = related_df[related_df.what == 'owl:minCardinality'].related.tolist()
+    
+    for i, pred in enumerate(preds):
+        if pred not in relations:
+            relations.append(pred)
+            related.append(objs[i])
+    
+    # combine the non-overlapping labels of relation and related
+    for i, rel_uri in enumerate(relations):
+        rel_lab_raw = mapneighbor.extract_label_from_uri(rel_uri)
+        rel_lab = " ".join(maponto.clean_document_lower(rel_lab_raw))
+        
+        obj_lab_raw = mapneighbor.extract_label_from_uri(related[i])
+        obj_lab = " ".join(maponto.clean_document_lower(obj_lab_raw))
+        
+        #print(rel_lab, obj_lab)
+        
+        if rel_lab.find(obj_lab) < 0:
+            ans.append(rel_lab + " " + obj_lab)
+        else:
+            ans.append(rel_lab)
+    
+    return ans    
+    
 
 def main(argv):
     if len(argv) == 2:
@@ -1370,8 +1668,6 @@ def mapping_label_syn_was_rest(slabel_clnd_uris, tlabel_clnd_uris, src_graph, tg
 # create ensemble mappings from all methods
 
 
-
-
 ### Copied from pythonMacher.py in github.com/dwslab/melt/examples/externalPythonMatcherWeb/
 def match(source_url, target_url, embs_model, output_url, input_alignment_url):
     
@@ -1400,8 +1696,273 @@ def match(source_url, target_url, embs_model, output_url, input_alignment_url):
 
     return output_url
 
+# compute the wd distance between equivalents
+def wd_between_comments(srelated, trelated, embs_model):
+    '''
+        input: 
+               srelated: all related information for a source uri, 'relation', 'related', 'what'
+               trelated: all related inforamtion for a target uri, 'relation', 'related', 'what'
+        output: wd between comments; if negative, no meaningful wd exists
+    '''
+    
+    #prepare two lists of labels for computing the wd
+    sls = []
+    tls = []
+    
+    #retrieve all comments for the source uri from the dataframe
+    #of related information in ['relation', 'related', 'what']; comments under 'related'
+    scomments = srelated[srelated.what == 'comment'].related.tolist()
+    for cmt in scomments:
+        #logging.info(cmt)
+        #clean and pre-process comments; clean_document_lower returns a list of 
+        #individual words in the label (here comments); join the individual
+        #words back to a single string
+        #sls.append(" ".join(maponto.clean_document_lower(cmt)))
+        sls.extend((maponto.clean_document_lower(cmt)))
+    
+    tcomments = trelated[trelated.what == 'comment'].related.tolist()
+    for cmt in tcomments:
+        #logging.info(cmt)
+        #see above
+        #tls.append(" ".join(maponto.clean_document_lower(cmt)))
+        tls.extend((maponto.clean_document_lower(cmt)))
+        
+    # if either source or target doesn't have superclass return -1
+    if len(sls) == 0 or len(tls) == 0:
+        logging.info("WD_between_comments: {} or {} is empty".format(sls, tls))
+        return -1
+    else:
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        logging.info("WD_between_comments={}: {} and {}".format(wd, sls, tls))
+        
+        return wd
 
 
+# compute the wd distance between datatypes
+def wd_between_datatypes(srelated, trelated, embs_model):
+    '''
+        input: 
+               srelated: all related information for a source uri, 'relation', 'related', 'what'
+               trelated: all related inforamtion for a target uri, 'relation', 'related', 'what'
+        output: wd between datatype properties; if negative, no meaningful wd exists
+    '''
+    
+    sls = []
+    tls = []
+    
+    suris = srelated[srelated.what == 'datatype domain'].relation.tolist()
+    for uri in suris:
+        dproperty = mapneighbor.extract_label_from_uri(uri)
+        sls.append(" ".join(maponto.clean_document_lower(dproperty)))
+    
+    turis = trelated[trelated.what == 'datatype domain'].relation.tolist()
+    for uri in turis:
+        dproperty = mapneighbor.extract_label_from_uri(uri)
+        tls.append(" ".join(maponto.clean_document_lower(dproperty)))
+        
+    # if either source or target doesn't have superclass return -1
+    if len(sls) == 0 or len(tls) == 0:
+        logging.info("WD_between_datatypes: {} or {} is empty".format(sls, tls))
+        return -1
+    else:
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        logging.info("WD_between_datatypes={}: {} and {}".format(wd, sls, tls))
+        
+        return wd    
+    
+    
+
+# compute the wd distance between disjoint
+def wd_between_disjoint(srelated, trelated, slabel_clnd_uris, tlabel_clnd_uris, embs_model):
+    '''
+        input: 
+               srelated: all related information for a source uri, 'relation', 'related', 'what'
+               trelated: all related inforamtion for a target uri, 'relation', 'related', 'what'
+               slabel_clnd_uris: source DataFrame with 'label', 'uri', 'clndLabel'
+               tlabel_clnd_uris: target DataFrame with 'label', 'uri', 'clndLabel'
+        output: wd between disjoints; if negative, no meaningful wd exists
+    '''
+    
+    sls = []
+    tls = []
+    
+    suris = srelated[srelated.what == 'disjoint'].related.tolist()
+    for uri in suris:
+        sls.append(slabel_clnd_uris[slabel_clnd_uris.uri == uri].clndLabel.tolist()[0])
+    
+    turis = trelated[trelated.what == 'disjoint'].related.tolist()
+    for uri in turis:
+        tls.append(tlabel_clnd_uris[tlabel_clnd_uris.uri == uri].clndLabel.tolist()[0])
+        
+    # if either source or target doesn't have superclass return -1
+    if len(sls) == 0 or len(tls) == 0:
+        logging.info("WD_between_disjoint: {} or {} is empty".format(sls, tls))
+        return -1
+    else:
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        logging.info("WD_between_disjoint={}: {} and {}".format(wd, sls, tls))
+        
+        return wd
+
+
+ # compute the wd distance between equivalents
+def wd_between_equivalents(srelated, trelated, slabel_clnd_uris, tlabel_clnd_uris, embs_model):
+    '''
+        input: 
+               srelated: all related information for a source uri, 'relation', 'related', 'what'
+               trelated: all related inforamtion for a target uri, 'relation', 'related', 'what'
+               slabel_clnd_uris: source DataFrame with 'label', 'uri', 'clndLabel'
+               tlabel_clnd_uris: target DataFrame with 'label', 'uri', 'clndLabel'
+        output: wd between equivalents; if negative, no meaningful wd exists
+    '''
+    
+    sls = []
+    tls = []
+    
+    suris = srelated[srelated.what == 'equivalent'].related.tolist()
+    for uri in suris:
+        sls.append(slabel_clnd_uris[slabel_clnd_uris.uri == uri].clndLabel.tolist()[0])
+    
+    turis = trelated[trelated.what == 'equivalent'].related.tolist()
+    for uri in turis:
+        tls.append(tlabel_clnd_uris[tlabel_clnd_uris.uri == uri].clndLabel.tolist()[0])
+        
+    # if either source or target doesn't have superclass return -1
+    if len(sls) == 0 or len(tls) == 0:
+        logging.info("WD_between_equivalent: {} or {} is empty".format(sls, tls))
+        return -1
+    else:
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        logging.info("WD_between_equivalent={}: {} and {}".format(wd, sls, tls))
+        
+        return wd   
+    
+
+# compute the wd distance based on source and target names
+def wd_between_names(sclndLabel, tclndLabel, embs_model):
+    '''
+        input: sclndLabel: the clnd source label
+               tclndlabel: the clnd target label
+        output: wd between name clnd labels
+    '''
+    #sls = mapneighbor.get_syn_phrases(sclndLabel)
+    #tls = mapneighbor.get_syn_phrases(tclndLabel)
+    sls = [sclndLabel]
+    tls = [tclndLabel]
+    
+    _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+    #logging.info("WD_between_names={}: {} and {}".format(wd, sls, tls))
+    
+    return wd
+
+
+# compute the wd distance between object properties including
+# allValuesFrom, someValuesFrom, domain, range, owl:maxCardinality, owl:minCardinality
+def wd_between_objectproperties(srelated, trelated, embs_model):
+    '''
+        input: 
+               srelated: all related information for a source uri, 'relation', 'related', 'what'
+               trelated: all related inforamtion for a target uri, 'relation', 'related', 'what'
+        output: wd between object properties; if negative, no meaningful wd exists
+    '''
+    
+    sls = []
+    tls = []
+    
+    sls = get_objectproperty_labels(srelated)
+    tls = get_objectproperty_labels(trelated)
+        
+    # if either source or target doesn't have superclass return -1
+    if len(sls) == 0 or len(tls) == 0:
+        logging.info("WD_between_objectproperties: {} or {} is empty".format(sls, tls))
+        return -1
+    else:
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        logging.info("WD_between_objectproperties={}: {} and {}".format(wd, sls, tls))
+        
+        return wd
+
+
+# compute the wd distance between subclasses
+def wd_between_subclasses(srelated, trelated, slabel_clnd_uris, tlabel_clnd_uris, embs_model):
+    '''
+        input: 
+               srelated: all related information for a source uri, 'relation', 'related', 'what'
+               trelated: all related inforamtion for a target uri, 'relation', 'related', 'what'
+               slabel_clnd_uris: source DataFrame with 'label', 'uri', 'clndLabel'
+               tlabel_clnd_uris: target DataFrame with 'label', 'uri', 'clndLabel'
+        output: wd between subclasses; if negative, no meaningful wd exists
+    '''
+    
+    sls = []
+    tls = []
+    
+    suris = srelated[srelated.what == 'parent'].related.tolist()
+    for uri in suris:
+        sls.append(slabel_clnd_uris[slabel_clnd_uris.uri == uri].clndLabel.tolist()[0])
+    
+    turis = trelated[trelated.what == 'parent'].related.tolist()
+    for uri in turis:
+        tls.append(tlabel_clnd_uris[tlabel_clnd_uris.uri == uri].clndLabel.tolist()[0])
+        
+    # if either source or target doesn't have superclass return -1
+    if len(sls) == 0 or len(tls) == 0:
+        logging.info("WD_between_subclasses: {} or {} is empty".format(sls, tls))
+        return -1
+    else:
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        logging.info("WD_between_subclasses={}: {} and {}".format(wd, sls, tls))
+        
+        return wd
+
+
+# compute the wd distance between superclasses
+def wd_between_superclasses(srelated, trelated, slabel_clnd_uris, tlabel_clnd_uris, embs_model):
+    '''
+        input: 
+               srelated: all related information for a source uri, 'relation', 'related', 'what'
+               trelated: all related inforamtion for a target uri, 'relation', 'related', 'what'
+               slabel_clnd_uris: source DataFrame with 'label', 'uri', 'clndLabel'
+               tlabel_clnd_uris: target DataFrame with 'label', 'uri', 'clndLabel'
+        output: wd between superclasses; if negative, no meaningful wd exists
+    '''
+    
+    sls = []
+    tls = []
+    
+    suris = srelated[srelated.what == 'child'].related.tolist()
+    for uri in suris:
+        sls.append(slabel_clnd_uris[slabel_clnd_uris.uri == uri].clndLabel.tolist()[0])
+    
+    turis = trelated[trelated.what == 'child'].related.tolist()
+    for uri in turis:
+        tls.append(tlabel_clnd_uris[tlabel_clnd_uris.uri == uri].clndLabel.tolist()[0])
+        
+
+    #if both source and target don't have superclass return -1
+    #if len(sls) == 0 and len(tls) == 0:
+    #    return -1
+    """
+    elif len(sls) == 0:
+        sls.append(sclndLabel)
+        logging.info("WD between {} and {}".format(sls, tls))
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        return wd
+    elif len(tls) == 0:
+        tls.append(tclndLabel)
+        logging.info("WD between {} and {}".format(sls, tls))
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        return wd
+    """
+    # if either source or target doesn't have superclass return -1
+    if len(sls) == 0 or len(tls) == 0:
+        logging.info("WD_between_superclasses: {} or {} is empty".format(sls, tls))
+        return -1
+    else:
+        _, wd = maponto.wd_between_labels_raw(sls, tls, embs_model)
+        logging.info("WD_between_superclasses={}: {} and {}".format(wd, sls, tls))
+        
+        return wd
 
 
 

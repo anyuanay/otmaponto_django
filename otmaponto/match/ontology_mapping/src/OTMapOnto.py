@@ -373,6 +373,7 @@ def extract_label_uris(graph):
             if len(str(res[1])) > 0:
                 labels.append(str(res[1]))
                 uris.append(str(res[0]))
+    
     except Exception as e:
         print("OTMapOnto.extract_label_uris(): first graph.query(): {}".format(e))
         
@@ -1068,6 +1069,40 @@ def match_label_embeddings_OT(slabel_clnd_uris_sub, tlabel_clnd_uris_sub, embs_m
     return alignment
 
 
+# match the ontology concepts through their (cleaned) label embeddings by OT
+# using raw costs and non-uniform distribtuion
+def match_label_embeddings_OT_raw_nonUniform(slabel_clnd_uris_sub, tlabel_clnd_uris_sub, embs_model, \
+                        make_mappings_func, top_n, mu, input_alignment):
+    """
+        input: slabel_clnd_uris_sub: source DataFrame with 'label', 'clndLabel', 'uri'
+               tlabel_clnd_uris_sub: target DataFrame with 'label', 'clndLabel', 'uri'
+               embs_model: pre-trained embedding model
+               make_mappings_func: the function to make mappings from OT couplings
+               top_n: if the make_mappings_func will choose top n from the OT couplings
+               mu: smooting factor for non-uniform distribution computing
+               input_alignment: no use
+        output: alignment DataFrame with: 'source', 'source_label', 'target', 'target_label'
+    """
+    
+    logging.info("Matching Label Embeddings by Optimal Transport...")
+    # OT applied to the embeddings of clndLabels
+    
+    # compute normalized costs between the source and target label lists by their embeddings
+    costs = costs_embeddings_raw(slabel_clnd_uris_sub.clndLabel.tolist(), tlabel_clnd_uris_sub.clndLabel.tolist(), embs_model)
+    
+    # compute OT couplings between source and target labels
+    couplings = ot_couplings_non_uniform(costs, mu)
+    
+    # MAKE MAPPINGS BETWEEN SOURCE LABLES AND TARGET LABELS
+    if top_n == None:
+        alignment = make_mappings_func(slabel_clnd_uris_sub, tlabel_clnd_uris_sub, couplings)
+    else:
+        alignment = make_mappings_func(slabel_clnd_uris_sub, tlabel_clnd_uris_sub, couplings, top_n)
+    
+    return alignment
+
+
+
 
 # match labels by their synonyms through WordNet
 def match_label_synonyms(slabel_clnd_uris_sub, tlabel_clnd_uris_sub, input_alignment):
@@ -1146,6 +1181,21 @@ def normalize_nounsyn_counts(label):
     return syn_counts
 
 
+# computing a non-uniform distribution for a set of points based on 
+# the given shortest distances to another set of points
+def non_uniform_dist(costs, mu):
+    '''
+        input:  costs: a nxm matrix (narray) of distances from a set of n points to a set of 
+                     m points
+                mu: a smoothing value for eliminating zero distances
+        output: a probability distribution for the n points 
+    '''
+    ds = costs.min(axis=1)
+    ds_mu_inv = 1 / (ds + mu)
+    p = ds_mu_inv / ds_mu_inv.sum()
+    
+    return p
+
 
 # compute OT couplings between source and target labels
 def ot_couplings(lmv, lnv, costs):
@@ -1172,6 +1222,64 @@ def ot_couplings(lmv, lnv, costs):
             couplings = ot.emd(a, b, costs)
     
     return couplings
+
+# compute OT couplings between source and target labels
+# by uniform distributions for both source and target
+def ot_couplings_uniform(costs):
+    """
+        input: ground costs
+        output: OT couplings between mv and nv
+    """
+    
+    logging.info("Computing Optimal Transport Plan Uniform Distribution...")
+    
+    # uniform distributions on source and target
+    lmv = costs.shape[0]
+    lnv = costs.shape[1]
+    a = np.ones((lmv,)) / lmv
+    b = np.ones((lnv,)) / lnv
+    
+    with warnings.catch_warnings(record=True) as ws:
+        # reg term
+        lambd = 1e-3
+        logging.info("Computing Wasserstein distance by the Sinkhorn algorithm...")
+        couplings = ot.sinkhorn(a, b, costs, lambd)
+                        
+        if len(ws) > 0:
+            # compute earch mover couplings and distances (Wasserstein-2)
+            logging.info("The Sinkhorn got warnings. Computing Wasserstein distance by the EMD algorithm...")
+            couplings = ot.emd(a, b, costs)
+    
+    return couplings
+
+
+# compute OT couplings between source and target labels
+# by non-uniform distributions for source and target
+def ot_couplings_non_uniform(costs, mu):
+    """
+        input: length of mv, length of nv, ground costs
+        output: OT couplings between mv and nv
+    """
+    
+    logging.info("Computing Optimal Transport Plan Non-uniform Distribution...")
+    
+    # Non-uniform distributions on source and target
+    a = non_uniform_dist(costs, mu)
+    b = non_uniform_dist(costs.T, mu)
+    
+    with warnings.catch_warnings(record=True) as ws:
+        # reg term
+        lambd = 1e-3
+        logging.info("Computing Wasserstein distance by the Sinkhorn algorithm...")
+        couplings = ot.sinkhorn(a, b, costs, lambd)
+                        
+        if len(ws) > 0:
+            # compute earch mover couplings and distances (Wasserstein-2)
+            logging.info("The Sinkhorn got warnings. Computing Wasserstein distance by the EMD algorithm...")
+            couplings = ot.emd(a, b, costs)
+    
+    return couplings
+
 
 
 # Recursively parse all imported OWL files
@@ -1734,8 +1842,8 @@ def uri_concept(uri, graph):
 # compute the Wasserstein distance between the concept labels of two ontologies
 def wd_between_labels(slabel_list, tlabel_list, embs_model):
     '''
-        input: slabel_list: a list of source labels
-               tlabel_list: a list of target labels
+        input: slabel_list: a list of source clnd labels
+               tlabel_list: a list of target clnd labels
                embs_model: pre-trained model
         output: 
                 costs: the normalized ground costs between the source and target labels
@@ -1765,8 +1873,8 @@ def wd_between_labels(slabel_list, tlabel_list, embs_model):
 # using the raw costs, not normalized costs
 def wd_between_labels_raw(slabel_list, tlabel_list, embs_model):
     '''
-        input: slabel_list: a list of source labels
-               tlabel_list: a list of target labels
+        input: slabel_list: a list of source clnd labels
+               tlabel_list: a list of target clnd labels
                embs_model: pre-trained model
         output: 
                 costs: the raw ground costs between the source and target labels
