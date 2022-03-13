@@ -64,23 +64,21 @@ def compute_Wasserstein_distance(srelatedWords_counts, trelatedWords_counts, emb
     src_embs = []
     src_counts = []
     for sw in srelatedWords_counts:
-        src_embs.append(embs_model.wv[sw])
+        src_embs.append(maponto.average_embeddings(sw, 300, embs_model))
         src_counts.append(srelatedWords_counts[sw])
         
     tgrt_embs = []
     tgrt_counts = []
     for tw in trelatedWords_counts:
-        tgrt_embs.append(embs_model.wv[tw])
+        tgrt_embs.append(maponto.average_embeddings(tw, 300, embs_model))
         tgrt_counts.append(trelatedWords_counts[tw])
-        
         
     src_distr = np.array(src_counts) / np.array(src_counts).sum()
     tgrt_distr = np.array(tgrt_counts) / np.array(tgrt_counts).sum()
 
     costs = sp.spatial.distance.cdist(src_embs, tgrt_embs)
-    costs_norm = costs/costs.max()
 
-    wsd = ot.emd2(src_distr, tgrt_distr, costs_norm)
+    wsd = ot.emd2(src_distr, tgrt_distr, costs)
             
     return wsd
 
@@ -432,9 +430,10 @@ def get_relatedWords_counts(topic, uri, label, clndLabel, rdfgraph, label_clnd_u
 
 
 # obtain phrases as combined synonyms from a phrase with multiple words
-def get_syn_phrases(phrase):
+def get_syn_phrases(phrase, num_thred):
     """
         input: phrase: a string with multiple words
+               num_thred: number of synonyms to be considered
         output: a list of phrases consisting of synonyms
     """
     ans = []
@@ -444,10 +443,12 @@ def get_syn_phrases(phrase):
     
     for word in words:
         synonyms = []
-        for syn in wordnet.synsets(word):
+        for syn in wordnet.synsets(word, 'n'):
             for synw in syn.lemma_names():
-                if synw not in synonyms:
-                    synonyms.append(synw)
+                #clean_synw = synw
+                clean_synw = " ".join(maponto.clean_document_keepStops(synw))
+                if clean_synw not in synonyms and len(synonyms) < num_thred:
+                    synonyms.append(clean_synw)
         if len(ans) == 0:
             ans.extend(synonyms)
         else:
@@ -458,6 +459,9 @@ def get_syn_phrases(phrase):
     
             ans.clear()
             ans.extend(temp)
+    
+    if phrase not in ans:
+        ans.append(phrase)
         
     return ans
 
