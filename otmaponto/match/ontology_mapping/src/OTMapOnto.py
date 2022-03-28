@@ -700,6 +700,495 @@ def clean_labels(label_uri_df, rmStopWords=True):
     
     return res_df
 
+
+# compute various simlarities between candidate source and target pairs
+def compute_candidate_similarities(preds_candidates, sedges, tedges, embs_model):
+    '''
+        input: preds_candidates: a DataFrame with ['source', 'source_label_x', 
+               'target', 'target_label_x', 'target_label_y', 'source_label_y']
+               sedges: source relation edges Dataframe with columns 
+                      ['subject', 'predicate', 'property', 'object']
+               tedges: target relation edges DataFramw with columns
+                      ['subject', 'predicate', 'property', 'object']
+               embs_model: pre-trained embeddings
+        output: a dictionary similarities with keys:
+                   ['string_similarity', 'context_similarity','label_embeddings_similarity',
+                   'label_embeddings_wd_similarity', 'string_context_similarity',
+                   'label_emb_context_similarity', 'label_emb_wd_context_similarity',
+                   'label_emb_wd_context_all_similarity'] 
+        
+    '''
+    
+    similarities = {}
+    
+    scores_string = [] # string similiary by levenshtein_distance
+    scores_context = [] # concept context triple embedding similarity 
+    scores_label_embeddings = [] # string label embedding similarity
+    scores_label_embeddings_wd = [] # string label embedding WD similarity
+
+    suri2emb_tuples = defaultdict(list)
+    turi2emb_tuples = defaultdict(list)
+
+
+    for i, row in tqdm(preds_candidates.iterrows()):
+        #if i > 10:
+        #    break
+        source_uri = row['source']
+        target_uri = row['target']
+        suri_embedding_tuples = suri2emb_tuples.get(source_uri)
+        # the uri hasn't been associated with triple embeddings yet.
+        if suri_embedding_tuples == None:
+            suri_triples = get_context_triples(source_uri, sedges)
+            suri_embedding_tuples = convert_label_embedding_tuples(suri_triples, 
+                                                                       embs_model)
+            suri2emb_tuples[source_uri] = suri_embedding_tuples
+    
+        turi_embedding_tuples = turi2emb_tuples.get(target_uri)
+        # the uri hasn't been associated with triple embeddings yet.
+        if turi_embedding_tuples == None:
+            turi_triples = get_context_triples(target_uri, tedges)
+            turi_embedding_tuples = convert_label_embedding_tuples(turi_triples, 
+                                                                       embs_model)
+            turi2emb_tuples[target_uri] = turi_embedding_tuples
+    
+        # compute the context similarity
+        wd_costs = compute_wd_matrix_embedding_tuples_raw(suri_embedding_tuples, 
+                                                               turi_embedding_tuples)
+        a = np.ones((wd_costs.shape[0],)) / wd_costs.shape[0]
+        b = np.ones((wd_costs.shape[1],)) / wd_costs.shape[1]
+        wd = ot.emd2(a, b, wd_costs)
+        scores_context.append(np.exp(-wd))
+    
+        # compute the string similarity
+        slabel = clean_extract_label_from_uri(source_uri).strip()
+        tlabel = clean_extract_label_from_uri(target_uri).strip()
+        st_dist = jellyfish.levenshtein_distance(slabel, tlabel)
+        scores_string.append(np.exp(-st_dist))
+    
+        # compute the string averagey embedding similarity
+        slabel_emb = average_embeddings(slabel, 300, embs_model)
+        tlabel_emb = average_embeddings(tlabel, 300, embs_model)
+        st_emb_dist = sp.spatial.distance.euclidean(slabel_emb, tlabel_emb)
+        scores_label_embeddings.append(np.exp(-st_emb_dist))
+    
+        # compute the WD between two labels in individual word embeddings
+        _, st_wd = wd_between_labels_raw(slabel.split(" "), tlabel.split(" "), 
+                                                 embs_model)
+        scores_label_embeddings_wd.append(np.exp(-st_wd))
+        
+    # compute various combined similarities
+    string_context_similarity = np.array(scores_string) * np.array(scores_context)
+        
+    label_emb_context_similarity = np.array(scores_label_embeddings) * \
+        np.array(scores_context)
+        
+    label_emb_wd_context_similarity = np.array(scores_label_embeddings_wd) * \
+        np.array(scores_context)
+        
+    label_emb_wd_context_all_similarity = np.array(scores_label_embeddings) * \
+        np.array(scores_label_embeddings_wd) * np.array(scores_context)
+        
+    similarities['string_similarity'] = scores_string
+    similarities['context_similarity'] = scores_context
+    similarities['label_embeddings_similarity'] = scores_label_embeddings
+    similarities['label_embeddings_wd_similarity'] = scores_label_embeddings_wd
+    similarities['string_context_similarity'] = string_context_similarity
+    similarities['label_emb_context_similarity'] = label_emb_context_similarity
+    similarities['label_emb_wd_context_similarity'] = label_emb_wd_context_similarity
+    similarities['label_emb_wd_context_all_similarity'] = label_emb_wd_context_all_similarity
+    
+    return similarities
+
+
+# compute mapping candidates by different criteria (nn)
+# the candidates for refinement are lab_features+embeddings_OT_topn
+# stored in the DataFrame: preds_nn_align_all_combined
+
+def compute_nn_candidates(subf, slabel_clnd_uris, tlabel_clnd_uris, source_graph, 
+                                         target_graph, refs_url, embs_model):
+    '''
+        input: subf: string representing a matching case
+               slabel_clnd_uris: souce label uri dataframe ['label', 'uri', 'clndLabel']
+               tlabel_clnd_uris: target label uri dataframe ['label', 'uri', 'clndLabel']
+               source_graph: souce RDF graph
+               target_graph: target RDF graph
+               refs_url: url to references rdf file
+               embs_model: pre-trained embeddings
+        output: preds_nn_align_all_combined: a dataframe of topn candidates
+                 ['source', 'source_label_x', 'target', 'target_label_x',
+                  'target_label_y', 'source_label_y']
+                all_results: a list of dictionary with keys: ['numOfRefs', 
+                'numOfCorrectlyPredicted', 'numOfPredicted', 'precision', 'recall', 
+                'f1', 'method', 'test_case']
+               
+    '''
+    all_results = []
+
+    lab_align = match_label_features(slabel_clnd_uris, tlabel_clnd_uris, source_graph, 
+                                         target_graph, embs_model)
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(lab_align, refs_url)
+    eval_results['method'] = 'source2target:match_label_features'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    lab_align_inv = match_label_features(tlabel_clnd_uris, slabel_clnd_uris, target_graph, 
+                                         source_graph, embs_model)
+    lab_align_inv.columns = ['target','target_label','source','source_label']
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(lab_align_inv, refs_url)
+    eval_results['method'] = 'target2source:match_label_features'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+        
+    # get combined label-based alignments
+    lab_align_merged = lab_align.merge(lab_align_inv, how='outer', on=['source', 'target'])
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(lab_align_merged, refs_url)
+    eval_results['method'] = 'combined:match_label_features'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+           
+    # extract the concepts that are not matched so far
+    slabel_clnd_uris_rest = otmapper.extract_rest_concepts(slabel_clnd_uris, lab_align, 'source')
+    tlabel_clnd_uris_rest = otmapper.extract_rest_concepts(tlabel_clnd_uris, lab_align, 'target')
+
+    # matching based on nn over OT couplings between embeddings of 
+    # the sets of words from source and target concepts
+    embeddings_OT_nn_align = match_label_embeddings_OT(slabel_clnd_uris_rest,
+                                                               tlabel_clnd_uris_rest, 
+                                                    embs_model, make_mappings_nn, None, None)
+    #print("match_label_embeddings_OT(nn): {}".format(embeddings_OT_nn_align.shape[0]))
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(embeddings_OT_nn_align, refs_url)
+    eval_results['method'] = 'source2target:match_label_embeddings_OT(nn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+    
+    # extract the concepts that are not matched so far
+    slabel_clnd_uris_rest = otmapper.extract_rest_concepts(slabel_clnd_uris, lab_align_inv, 'source')
+    tlabel_clnd_uris_rest = otmapper.extract_rest_concepts(tlabel_clnd_uris, lab_align_inv, 'target')
+
+    # matching based on nn over OT couplings between embeddings of 
+    # the sets of words from target and source concepts 
+    embeddings_OT_nn_align_inv = match_label_embeddings_OT(tlabel_clnd_uris_rest, 
+                                                                   slabel_clnd_uris_rest, 
+                                                  embs_model, make_mappings_nn, None, None)
+    embeddings_OT_nn_align_inv.columns = ['target','target_label','source','source_label']
+    #print("match_label_embeddings_OT(nn) inv: {}".format(embeddings_OT_nn_align_inv.shape[0]))
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(embeddings_OT_nn_align_inv, refs_url)
+    eval_results['method'] = 'target2source:match_label_embeddings_OT(nn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    embeddings_OT_nn_align_merged = embeddings_OT_nn_align.merge(embeddings_OT_nn_align_inv, how='outer', 
+                                                  on=['source', 'target'])
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(embeddings_OT_nn_align_merged, refs_url)
+    eval_results['method'] = 'combined:match_label_embeddings_OT(nn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    preds_nn_align_all = pd.concat([lab_align, embeddings_OT_nn_align]).reset_index(drop=True)
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(preds_nn_align_all, refs_url)
+    eval_results['method'] = 'source2target:label_features+embeddings_OT(nn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    preds_nn_align_all_inv = pd.concat([lab_align_inv, embeddings_OT_nn_align_inv]).reset_index(drop=True)
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(preds_nn_align_all_inv, refs_url)
+    eval_results['method'] = 'target2source:label_features+embeddings_OT(nn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    preds_nn_align_all_combined = pd.concat([lab_align_merged,
+                                             embeddings_OT_nn_align_merged]).reset_index(drop=True)
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(preds_nn_align_all_combined, refs_url)
+    eval_results['method'] = 'combined:label_features+embeddings_OT(nn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+    
+    
+    return preds_nn_align_all_combined, all_results
+
+
+# make all source-target object property matchings with various similarities
+def compute_property_all_matchings(sproperty_uris, tproperty_uris, subf, embs_model):
+    '''
+        input: sproperty_uris: a DataFrame containing source properties ['label', 'uri']
+               tproperty_uris: a DataFrame containing target properties ['label', 'uri']
+               subf: a string representing the test case
+               embs_model: pre-trained word embeddings
+        output: a DataFrame containing candidate property matchings with
+                ['source', 'target', 'test_case', 'sLabel', 'tLabel', 'stLabSim', 'stLabEmbSim',
+                 'stLabEmbWDSim', 'sLabelNS', 'tLabelNS', 'stLabNSSim', 'stLabNSEmbSim',
+                 'stLabNSEmbWDSim', 'sDRLabel', 'tDRLabel', 'stDRLabSim',
+                 'stDRLabEmbSim', 'stDRLabEmbWDSim', 'sDRLabelNS', 'tDRLabelNS',
+                 'stDRLabNSSim', 'stDRLabNSEmbSim', 'stDRLabNSEmbWDSim']
+    '''
+    
+    property_matchings = []
+    for i, srow in sproperty_uris.iterrows():
+        # get the uri
+        suri = srow['uri']
+        # extract the raw label
+        slabel = mapneighbor.extract_label_from_uri(suri)
+
+        # clean the label by separating individual words using spaces
+        sClndLabel = " ".join(clean_document_keepStops(slabel))
+        sClndLabel_emb = average_embeddings(sClndLabel, 300, embs_model)
+
+        # clean the label by separating individual words using spaces
+        sClndLabelNoStop = " ".join(clean_document_lower(slabel))
+        sClndLabelNoStop_emb = average_embeddings(sClndLabelNoStop, 300, embs_model)
+
+        # extact the label with doman and range
+        sDomainRangeLabel = srow['label']
+
+        # clean the label by separating individual words using spaces
+        sClndDomainRangeLabel = " ".join(clean_document_keepStops(sDomainRangeLabel))
+        sClndDomainRangeLabel_emb = average_embeddings(sClndDomainRangeLabel, 300, 
+                                                   embs_model)
+
+        # clean the label by separating individual words using spaces
+        sClndDomainRangeLabelNoStop = " ".join(clean_document_lower(sDomainRangeLabel))
+        sClndDomainRangeLabelNoStop_emb = average_embeddings(sClndDomainRangeLabelNoStop, 
+                                                                     300, embs_model)
+
+        for i, trow in tproperty_uris.iterrows():
+            turi = trow['uri']
+
+            ####################
+            tlabel = mapneighbor.extract_label_from_uri(turi)
+            ####################
+            # clean the label by separating individual words using spaces
+            tClndLabel = " ".join(clean_document_keepStops(tlabel))
+            tClndLabel_emb = average_embeddings(tClndLabel, 300, embs_model)
+
+            # compute string similarity
+            st_dist = jellyfish.levenshtein_distance(sClndLabel, tClndLabel)
+            stClndLabel_similarity = np.exp(-st_dist)
+
+            # compute the string averagey embedding similarity
+            st_emb_dist = ot.dist(np.array([sClndLabel_emb]), np.array([tClndLabel_emb]))[0][0]
+            stClndLabel_embeddings_similarity = np.exp(-st_emb_dist)
+
+            # compute the WD between two labels in individual word embeddings
+            _, st_wd = wd_between_labels_raw(sClndLabel.split(" "), 
+                                          tClndLabel.split(" "), embs_model)
+            stClndLabel_embeddings_wd_similarity = np.exp(-st_wd)
+
+            ###################
+            tClndLabelNoStop = " ".join(clean_document_lower(tlabel))
+            tClndLabelNoStop_emb = average_embeddings(tClndLabelNoStop, 300, embs_model)
+
+            # compute string similarity
+            st_dist = jellyfish.levenshtein_distance(sClndLabelNoStop, tClndLabelNoStop)
+            stClndLabelNoStop_similarity = np.exp(-st_dist)
+
+            # compute the string averagey embedding similarity
+            st_emb_dist = ot.dist(np.array([sClndLabelNoStop_emb]), 
+                                                        np.array([tClndLabelNoStop_emb]))[0][0]
+            stClndLabelNoStop_embeddings_similarity = np.exp(-st_emb_dist)
+
+            # compute the WD between two labels in individual word embeddings
+            _, st_wd = wd_between_labels_raw(sClndLabelNoStop.split(" "), 
+                                          tClndLabelNoStop.split(" "), embs_model)
+            stClndLabelNoStop_embeddings_wd_similarity = np.exp(-st_wd)
+
+
+            #################
+            tDomainRangeLabel = trow['label']
+            ##################
+            # clean the label by separating individual words using spaces
+            tClndDomainRangeLabel = " ".join(clean_document_keepStops(tDomainRangeLabel))
+            tClndDomainRangeLabel_emb = average_embeddings(tClndDomainRangeLabel, 300, 
+                                                               embs_model)
+            # compute string similarity
+            st_dist = jellyfish.levenshtein_distance(sClndDomainRangeLabel, 
+                                                     tClndDomainRangeLabel)
+            stClndDomainRangeLabel_similarity = np.exp(-st_dist)
+
+            # compute the string averagey embedding similarity
+            st_emb_dist = ot.dist(np.array([sClndDomainRangeLabel_emb]), 
+                                                        np.array([tClndDomainRangeLabel_emb]))[0][0]
+            stClndDomainRangeLabel_embeddings_similarity = np.exp(-st_emb_dist)
+
+            # compute the WD between two labels in individual word embeddings
+            _, st_wd = wd_between_labels_raw(sClndDomainRangeLabel.split(" "), 
+                                          tClndDomainRangeLabel.split(" "), embs_model)
+            stClndDomainRangeLabel_embeddings_wd_similarity = np.exp(-st_wd)
+
+
+            ##################
+            # clean the label by separating individual words using spaces
+            tClndDomainRangeLabelNoStop = " ".join(clean_document_lower(tDomainRangeLabel))
+            tClndDomainRangeLabelNoStop_emb = average_embeddings(tClndDomainRangeLabelNoStop, 
+                                                            300, embs_model)
+            # compute string similarity
+            st_dist = jellyfish.levenshtein_distance(sClndDomainRangeLabelNoStop, 
+                                                     tClndDomainRangeLabelNoStop)
+            stClndDomainRangeLabelNoStop_similarity = np.exp(-st_dist)
+
+            # compute the string averagey embedding similarity
+            st_emb_dist = ot.dist(np.array([sClndDomainRangeLabelNoStop_emb]), 
+                                                        np.array([tClndDomainRangeLabelNoStop_emb]))[0][0]
+            stClndDomainRangeLabelNoStop_embeddings_similarity = np.exp(-st_emb_dist)
+
+            # compute the WD between two labels in individual word embeddings
+            _, st_wd = wd_between_labels_raw(sClndDomainRangeLabelNoStop.split(" "), 
+                                          tClndDomainRangeLabelNoStop.split(" "), embs_model)
+            stClndDomainRangeLabelNoStop_embeddings_wd_similarity = np.exp(-st_wd)
+
+            amap = {'source':suri, 'target':turi, 
+                    'test_case':subf,
+                    'sLabel':sClndLabel,
+                    'tLabel':tClndLabel, 
+                    'stLabSim':stClndLabel_similarity,
+                    'stLabEmbSim':stClndLabel_embeddings_similarity,
+                    'stLabEmbWDSim':stClndLabel_embeddings_wd_similarity,
+                    'sLabelNS':sClndLabelNoStop,
+                    'tLabelNS':tClndLabelNoStop, 
+                    'stLabNSSim':stClndLabelNoStop_similarity,
+                    'stLabNSEmbSim':stClndLabelNoStop_embeddings_similarity,
+                    'stLabNSEmbWDSim':stClndLabelNoStop_embeddings_wd_similarity,
+                    'sDRLabel':sClndDomainRangeLabel,
+                    'tDRLabel':tClndDomainRangeLabel, 
+                    'stDRLabSim':stClndDomainRangeLabel_similarity,
+                    'stDRLabEmbSim':stClndDomainRangeLabel_embeddings_similarity,
+                    'stDRLabEmbWDSim':stClndDomainRangeLabel_embeddings_wd_similarity,
+                    'sDRLabelNS':sClndDomainRangeLabelNoStop,
+                    'tDRLabelNS':tClndDomainRangeLabelNoStop, 
+                    'stDRLabNSSim':stClndDomainRangeLabelNoStop_similarity,
+                    'stDRLabNSEmbSim':stClndDomainRangeLabelNoStop_embeddings_similarity,
+                    'stDRLabNSEmbWDSim':stClndDomainRangeLabelNoStop_embeddings_wd_similarity
+                   }
+
+            property_matchings.append(amap)
+    
+    property_aligns = pd.DataFrame(property_matchings)
+    
+    return property_aligns
+
+
+# compute mapping candidates by different criteria
+# the candidates for refinement are lab_features+embeddings_OT_topn
+# stored in the DataFrame: preds_topn_align_all_combined
+
+def compute_topn_candidates(subf, slabel_clnd_uris, tlabel_clnd_uris, source_graph, 
+                                         target_graph, refs_url, embs_model):
+    '''
+        input: subf: string representing a matching case
+               slabel_clnd_uris: souce label uri dataframe ['label', 'uri', 'clndLabel']
+               tlabel_clnd_uris: target label uri dataframe ['label', 'uri', 'clndLabel']
+               source_graph: souce RDF graph
+               target_graph: target RDF graph
+               refs_url: url to references rdf file
+               embs_model: pre-trained embeddings
+        output: preds_topn_align_all_combined: a dataframe of topn candidates
+                 ['source', 'source_label_x', 'target', 'target_label_x',
+                  'target_label_y', 'source_label_y']
+                all_results: a list of dictionary with keys: ['numOfRefs', 
+                'numOfCorrectlyPredicted', 'numOfPredicted', 'precision', 'recall', 
+                'f1', 'method', 'test_case']
+               
+    '''
+    all_results = []
+
+    lab_align = match_label_features(slabel_clnd_uris, tlabel_clnd_uris, source_graph, 
+                                         target_graph, embs_model)
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(lab_align, refs_url)
+    eval_results['method'] = 'source2target:match_label_features'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    lab_align_inv = match_label_features(tlabel_clnd_uris, slabel_clnd_uris, target_graph, 
+                                         source_graph, embs_model)
+    lab_align_inv.columns = ['target','target_label','source','source_label']
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(lab_align_inv, refs_url)
+    eval_results['method'] = 'target2source:match_label_features'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+        
+    # get combined label-based alignments
+    lab_align_merged = lab_align.merge(lab_align_inv, how='outer', on=['source', 'target'])
+    # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
+    eval_results = evaluate_noprint(lab_align_merged, refs_url)
+    eval_results['method'] = 'combined:match_label_features'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    # extract the concepts that are not matched so far
+    slabel_clnd_uris_rest = otmapper.extract_rest_concepts(slabel_clnd_uris, lab_align, 'source')
+    tlabel_clnd_uris_rest = otmapper.extract_rest_concepts(tlabel_clnd_uris, lab_align, 'target')
+
+    # matching based on top-n over OT couplings between embeddings of 
+    # the sets of words from source and target concepts
+    embeddings_OT_topn_align = match_label_embeddings_OT(slabel_clnd_uris_rest, 
+                                                                 tlabel_clnd_uris_rest, 
+                                                  embs_model, make_mappings_topn, 20, None)
+    #print("match_label_embeddings_OT(topn): {}".format(embeddings_OT_topn_align.shape[0]))
+    eval_results = evaluate_noprint(embeddings_OT_topn_align, refs_url)
+    eval_results['method'] = 'source2target:match_label_embeddings_OT(topn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    # extract the concepts that are not matched so far
+    slabel_clnd_uris_rest = otmapper.extract_rest_concepts(slabel_clnd_uris, lab_align_inv, 'source')
+    tlabel_clnd_uris_rest = otmapper.extract_rest_concepts(tlabel_clnd_uris, lab_align_inv, 'target')
+
+    # matching based on topn over OT couplings between embeddings of 
+    # the sets of words from target and source concepts
+    embeddings_OT_topn_align_inv = match_label_embeddings_OT(tlabel_clnd_uris_rest,
+                                                                     slabel_clnd_uris_rest, 
+                                                  embs_model, make_mappings_topn, 20, None)
+    #print("match_label_embeddings_OT(topn) inv: {}".format(embeddings_OT_topn_align_inv.shape[0]))
+    embeddings_OT_topn_align_inv.columns = ['target','target_label','source','source_label']
+    eval_results = evaluate_noprint(embeddings_OT_topn_align_inv, refs_url)
+    eval_results['method'] = 'target2source:match_label_embeddings_OT(topn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    embeddings_OT_topn_align_merged = embeddings_OT_topn_align.merge(embeddings_OT_topn_align_inv,
+                                                                     how='outer', 
+                                                  on=['source', 'target'])
+    eval_results = evaluate_noprint(embeddings_OT_topn_align_merged, refs_url)
+    eval_results['method'] = 'combined:match_label_embeddings_OT(topn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    preds_topn_align_all = pd.concat([lab_align, embeddings_OT_topn_align]).reset_index(drop=True)
+    eval_results = evaluate_noprint(preds_topn_align_all, refs_url)
+    eval_results['method'] = 'source2target:label_features+embeddings_OT(topn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+    preds_topn_align_all_inv = pd.concat([lab_align_inv,
+                                          embeddings_OT_topn_align_inv]).reset_index(drop=True)
+    eval_results = evaluate_noprint(preds_topn_align_all_inv, refs_url)
+    eval_results['method'] = 'target2source:label_features+embeddings_OT(topn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+        
+        
+    preds_topn_align_all_combined = pd.concat([lab_align_merged,
+                                               embeddings_OT_topn_align_merged]).reset_index(drop=True)
+    eval_results = evaluate_noprint(preds_topn_align_all_combined, refs_url)
+    eval_results['method'] = 'combined:label_features+embeddings_OT(topn)'
+    eval_results['test_case'] = subf
+    all_results.append(eval_results)
+    
+    return preds_topn_align_all_combined, all_results
+
+
 # compute the wd distance matrix between two list of embedding tuples
 def compute_wd_matrix_embedding_tuples(suri_embedding_tuples, turi_embedding_tuples):
     
@@ -2950,6 +3439,153 @@ def query_superClasses(uri, graph):
         related.append(r[0].toPython())
         what.append("child")
     return relation, related, what
+
+
+# Refine candidate matchings based on various criteria
+def refine_candidate_matchings(preds_candidates, criteria, subf, refs_url):
+    '''
+        input: preds_candidates: a DataFrame contains matching candidates with columns,
+                   ['source', 'source_label_x', 'target', 'target_label_x',
+                   'target_label_y', 'source_label_y', 'string_similarity',
+                   'context_similarity', 'label_embeddings_similarity',
+                   'label_embeddings_wd_similarity', 'string_context_similarity',
+                   'label_emb_context_similarity', 'label_emb_wd_context_similarity',
+                   'label_emb_wd_context_all_similarity']
+               criteria: a list of similiary criteria for refinement, 
+                   ['string_similarity',
+                   'context_similarity', 'label_embeddings_similarity',
+                   'label_embeddings_wd_similarity', 'string_context_similarity',
+                   'label_emb_context_similarity', 'label_emb_wd_context_similarity',
+                   'label_emb_wd_context_all_similarity']
+                subf: a string representing a matching case
+                refs_url: URL to reference file
+        output: a DataFrame with all evaluations results:
+                 ['numOfRefs', 'numOfCorrectlyPredicted', 'numOfPredicted', 'precision',
+                  'recall', 'f1', 'test_case', 'similarity', 'similarity_threshold',
+                  'similarity_cutoff', 'matching_pairing']
+    '''
+    align_cases = []
+    thresholds = np.arange(0, 1, 0.01)
+    matching_pairing = ['one-to-one', 'one-to-many', 'many-to-many']
+    #matching_pairing = ['many-to-many']
+    for col in criteria:
+        print(col)
+        preds_ordered = preds_candidates.sort_values([col], ascending=False)
+        for pairing in matching_pairing:
+            print(pairing)
+            for thre in tqdm(thresholds):
+                idx = []
+                sources = []
+                targets = []
+                for i, row in preds_ordered.iterrows():
+                    source = row['source']
+                    target = row['target']
+                    sim = row[col]
+                    if pairing == 'one-to-one':
+                        # idx.append(i)
+                        if (source not in sources) & (target not in targets):
+                            sources.append(source)
+                            targets.append(target)
+                            idx.append(i)
+                        if sim <= thre:
+                            break
+                    elif pairing == 'one-to-many':
+                        if (source not in sources):
+                            sources.append(source)
+                            idx.append(i)
+                        if sim <= thre:
+                            break
+                    elif pairing == 'many-to-many':
+                        idx.append(i)
+                        if sim <= thre:
+                            break;
+
+                preds_ordered_selected = preds_ordered.loc[idx][['source', 'target']]
+            
+                align = evaluate_noprint(preds_ordered_selected, refs_url)
+                align['test_case']= subf
+                align['similarity'] = col
+                align['similarity_threshold'] = thre
+                align['similarity_cutoff'] = sim
+                align['matching_pairing'] = pairing
+                align_cases.append(align)  
+
+    return pd.DataFrame(align_cases).sort_values('f1', ascending=False)
+
+
+# Refine candidate matchings based on various criteria
+def refine_candidate_property_matchings(preds_candidates_property, criteria, subf, refs_url):
+    '''
+        input: preds_candidates_property: a DataFrame contains property matching candidates with columns,
+                   ['source', 'target', 'sLabel', 'tLabel', 'stLabSim', 'stLabEmbSim',
+                    'stLabEmbWDSim', 'sLabelNS', 'tLabelNS', 'stLabNSSim', 'stLabNSEmbSim',
+                    'stLabNSEmbWDSim', 'sDRLabel', 'tDRLabel', 'stDRLabSim',
+                    'stDRLabEmbSim', 'stDRLabEmbWDSim', 'sDRLabelNS', 'tDRLabelNS',
+                    'stDRLabNSSim', 'stDRLabNSEmbSim', 'stDRLabNSEmbWDSim']
+               criteria: a list of similiary criteria for refinement, 
+                   ['stLabSim', 'stLabEmbSim',
+                    'stLabEmbWDSim', 'stLabNSSim', 'stLabNSEmbSim',
+                    'stLabNSEmbWDSim', 'stDRLabSim',
+                    'stDRLabEmbSim', 'stDRLabEmbWDSim',
+                    'stDRLabNSSim', 'stDRLabNSEmbSim', 'stDRLabNSEmbWDSim']
+                subf: a string representing a matching case
+                refs_url: URL to reference file
+        output: a DataFrame with all evaluations results:
+                 ['numOfRefs', 'numOfCorrectlyPredicted', 'numOfPredicted', 'precision',
+                  'recall', 'f1', 'test_case', 'similarity', 'similarity_threshold',
+                  'similarity_cutoff', 'matching_pairing']
+    '''
+
+    align_cases = []
+    thresholds = np.arange(0, 1, 0.01)
+    matching_pairing = ['one-to-one', 'one-to-many', 'many-to-many']
+    #matching_pairing = ['many-to-many']
+    for col in criteria:
+        print(col)
+        aligns_ordered = preds_candidates_property.sort_values([col], ascending=False)
+        for pairing in matching_pairing:
+            print(pairing)
+            for thre in tqdm(thresholds):
+                idx = []
+                sources = []
+                targets = []
+                st_pairs = []
+                for i, row in aligns_ordered.iterrows():
+                    source = row['source']
+                    target = row['target']
+                    sim = row[col]
+                    if pairing == 'one-to-one':
+                        # idx.append(i)
+                        if (source not in sources) & (target not in targets):
+                            sources.append(source)
+                            targets.append(target)
+                            idx.append(i)
+                        if sim < thre:
+                            break
+                    elif pairing == 'one-to-many':
+                        if (source not in sources):
+                            sources.append(source)
+                            idx.append(i)
+                        if sim < thre:
+                            break
+                    elif pairing == 'many-to-many':
+                        if (source, target) not in st_pairs:
+                            st_pairs.append((source, target))
+                            idx.append(i)
+                        if sim < thre:
+                            break;
+
+                aligns_ordered_selected = aligns_ordered.loc[idx][['source', 'target']]
+
+                align = evaluate_noprint(aligns_ordered_selected, refs_url)
+                align['test_case']= subf
+                align['similarity'] = col
+                align['similarity_threshold'] = thre
+                align['similarity_cutoff'] = sim
+                align['matching_pairing'] = pairing
+                align_cases.append(align)  
+                
+    return pd.DataFrame(align_cases).sort_values('precision', ascending=False)
 
 
 # Retrieve oboInOwl:hasRelatedSynonym

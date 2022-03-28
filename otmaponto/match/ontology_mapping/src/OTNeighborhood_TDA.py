@@ -193,14 +193,25 @@ def extract_datatypeProperty_domain_uris(graph):
         output: a DataFrame of DatatpyeProperty+domain labels and uris ['label', 'uri']
     """
     
-    def_query = '''SELECT ?d ?p
+    def_query = '''SELECT ?d ?p ?r
                    {
-                   ?p a owl:DatatypeProperty .
-                   ?p rdfs:domain ?d .
-                   ?p rdfs:range ?r .
-                   filter(!isBlank(?d)) .
-                   filter(!isBlank(?p)) .
-                   filter(!isBlank(?r))
+                       {
+                           ?p a owl:DatatypeProperty .
+                           ?p rdfs:domain ?d .
+                           ?p rdfs:range ?r .
+                        }
+                        UNION
+                        {
+                            ?p a owl:DatatypeProperty .
+                            ?p rdfs:domain ?o .
+                            ?o owl:unionOf ?o1 . 
+                            ?o1 (rdf:rest)*/rdf:first ?d . 
+                            ?p rdfs:range ?r .
+                        }
+                        
+                       filter(!isBlank(?d)).
+                       filter(!isBlank(?p)).
+                       filter(!isBlank(?r))
                    }
                    ORDER BY ?p
             '''
@@ -284,15 +295,44 @@ def extract_objectProperty_domain_range_uris(graph):
     
     def_query = '''SELECT ?d ?p ?r
                    {
-                   ?p a owl:ObjectProperty .
-                   ?p rdfs:domain ?d .
-                   ?p rdfs:range ?r .
-                   filter(!isBlank(?d)) .
-                   filter(!isBlank(?p)) .
-                   filter(!isBlank(?r))
+                       {
+                           ?p a owl:ObjectProperty .
+                           ?p rdfs:domain ?d .
+                           ?p rdfs:range ?r .
+                        }
+                        UNION
+                        {
+                            ?p a owl:ObjectProperty .
+                            ?p rdfs:domain ?o .
+                            ?o owl:unionOf ?o1 . 
+                            ?o1 (rdf:rest)*/rdf:first ?d . 
+                            ?p rdfs:range ?r .
+                        }
+                        UNION
+                        {
+                            ?p a owl:ObjectProperty .
+                            ?p rdfs:domain ?d .
+                            ?p rdfs:range ?o .
+                            ?o owl:unionOf ?o1 . 
+                            ?o1 (rdf:rest)*/rdf:first ?r . 
+                        }
+                        UNION
+                        {
+                            ?p a owl:ObjectProperty .
+                            ?p rdfs:domain ?od .
+                            ?od owl:unionOf ?od1 . 
+                            ?od1 (rdf:rest)*/rdf:first ?d . 
+                            ?p rdfs:range ?or .
+                            ?or owl:unionOf ?or1 . 
+                            ?or1 (rdf:rest)*/rdf:first ?r . 
+                        }
+                       filter(!isBlank(?d)).
+                       filter(!isBlank(?p)).
+                       filter(!isBlank(?r))
                    }
                    ORDER BY ?p
             '''
+    
     res = graph.query(def_query)
 
     labels = []
