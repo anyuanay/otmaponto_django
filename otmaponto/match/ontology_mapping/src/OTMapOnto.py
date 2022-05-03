@@ -1071,7 +1071,7 @@ def compute_property_all_matchings(sproperty_uris, tproperty_uris, subf, embs_mo
 
             property_matchings.append(amap)
     
-    property_aligns = pd.DataFrame(property_matchings)
+    property_aligns = pd.DataFrame(property_matchings).reset_index(drop=True)
     
     return property_aligns
 
@@ -1370,9 +1370,12 @@ def evaluate_noprint(align_df, refs_rdf_path):
     
     matched_df = align_df.merge(refs_df, how='inner', left_on=['source', 'target'], \
                                 right_on=['source', 'target'])
+    p=0
+    if len(align_df) > 0:
+        p = matched_df.shape[0] / align_df.shape[0]
     
-    p = matched_df.shape[0] / align_df.shape[0]
     r = matched_df.shape[0] / refs_df.shape[0]
+    
     f = 0
     if (p != 0) & (r != 0):
         f = 2 / (1/p + 1/r)
@@ -3442,7 +3445,7 @@ def query_superClasses(uri, graph):
 
 
 # Refine candidate matchings based on various criteria
-def refine_candidate_matchings(preds_candidates, criteria, subf, refs_url):
+def refine_candidate_matchings(preds_candidates, criteria, thresholds, matching_pairing, subf, refs_url):
     '''
         input: preds_candidates: a DataFrame contains matching candidates with columns,
                    ['source', 'source_label_x', 'target', 'target_label_x',
@@ -3457,16 +3460,21 @@ def refine_candidate_matchings(preds_candidates, criteria, subf, refs_url):
                    'label_embeddings_wd_similarity', 'string_context_similarity',
                    'label_emb_context_similarity', 'label_emb_wd_context_similarity',
                    'label_emb_wd_context_all_similarity']
+                thresholds: a sequence of similarity numbers for cutting off candidates
+                matching_pairing: a list of strings indicating the types of candidate matchings, 
+                        ['one-to-one', 'one-to-many', 'many-to-many']
                 subf: a string representing a matching case
                 refs_url: URL to reference file
         output: a DataFrame with all evaluations results:
                  ['numOfRefs', 'numOfCorrectlyPredicted', 'numOfPredicted', 'precision',
                   'recall', 'f1', 'test_case', 'similarity', 'similarity_threshold',
                   'similarity_cutoff', 'matching_pairing']
+                a DataFrame containing the refined alignments with the same columns as the input 
+                  preds_candidates
     '''
     align_cases = []
-    thresholds = np.arange(0, 1, 0.01)
-    matching_pairing = ['one-to-one', 'one-to-many', 'many-to-many']
+    #thresholds = np.arange(0, 1, 0.01)
+    #matching_pairing = ['one-to-one', 'one-to-many', 'many-to-many']
     #matching_pairing = ['many-to-many']
     for col in criteria:
         print(col)
@@ -3481,26 +3489,24 @@ def refine_candidate_matchings(preds_candidates, criteria, subf, refs_url):
                     source = row['source']
                     target = row['target']
                     sim = row[col]
-                    if pairing == 'one-to-one':
-                        # idx.append(i)
-                        if (source not in sources) & (target not in targets):
-                            sources.append(source)
-                            targets.append(target)
+                    if sim >= thre:
+                        if pairing == 'one-to-one':
+                            # idx.append(i)
+                            if (source not in sources) & (target not in targets):
+                                sources.append(source)
+                                targets.append(target)
+                                idx.append(i)
+                        elif pairing == 'one-to-many':
+                            if (source not in sources):
+                                sources.append(source)
+                                idx.append(i)
+                        elif pairing == 'many-to-many':
                             idx.append(i)
-                        if sim <= thre:
-                            break
-                    elif pairing == 'one-to-many':
-                        if (source not in sources):
-                            sources.append(source)
-                            idx.append(i)
-                        if sim <= thre:
-                            break
-                    elif pairing == 'many-to-many':
-                        idx.append(i)
-                        if sim <= thre:
-                            break;
+                    else:
+                        break
 
-                preds_ordered_selected = preds_ordered.loc[idx][['source', 'target']]
+                #preds_ordered_selected = preds_ordered.loc[idx][['source', 'target']]
+                preds_ordered_selected = preds_ordered.loc[idx].reset_index(drop=True)
             
                 align = evaluate_noprint(preds_ordered_selected, refs_url)
                 align['test_case']= subf
@@ -3510,11 +3516,12 @@ def refine_candidate_matchings(preds_candidates, criteria, subf, refs_url):
                 align['matching_pairing'] = pairing
                 align_cases.append(align)  
 
-    return pd.DataFrame(align_cases).sort_values('f1', ascending=False)
+    return pd.DataFrame(align_cases).sort_values('f1', ascending=False).reset_index(drop=True), preds_ordered_selected
 
 
 # Refine candidate matchings based on various criteria
-def refine_candidate_property_matchings(preds_candidates_property, criteria, subf, refs_url):
+def refine_candidate_property_matchings(preds_candidates_property, criteria, thresholds,
+                                        matching_pairing, subf, refs_url):
     '''
         input: preds_candidates_property: a DataFrame contains property matching candidates with columns,
                    ['source', 'target', 'sLabel', 'tLabel', 'stLabSim', 'stLabEmbSim',
@@ -3528,17 +3535,22 @@ def refine_candidate_property_matchings(preds_candidates_property, criteria, sub
                     'stLabNSEmbWDSim', 'stDRLabSim',
                     'stDRLabEmbSim', 'stDRLabEmbWDSim',
                     'stDRLabNSSim', 'stDRLabNSEmbSim', 'stDRLabNSEmbWDSim']
+                thresholds: a sequence of similarity numbers for cutting off candidates
+                matching_pairing: a list of strings indicating the types of candidate matchings, 
+                        ['one-to-one', 'one-to-many', 'many-to-many']
                 subf: a string representing a matching case
                 refs_url: URL to reference file
         output: a DataFrame with all evaluations results:
                  ['numOfRefs', 'numOfCorrectlyPredicted', 'numOfPredicted', 'precision',
                   'recall', 'f1', 'test_case', 'similarity', 'similarity_threshold',
                   'similarity_cutoff', 'matching_pairing']
+                a DataFrame containing the refined alignments with the same columns as the input 
+                  preds_candidates
     '''
 
     align_cases = []
-    thresholds = np.arange(0, 1, 0.01)
-    matching_pairing = ['one-to-one', 'one-to-many', 'many-to-many']
+    #thresholds = np.arange(0, 1, 0.01)
+    #matching_pairing = ['one-to-one', 'one-to-many', 'many-to-many']
     #matching_pairing = ['many-to-many']
     for col in criteria:
         print(col)
@@ -3554,28 +3566,26 @@ def refine_candidate_property_matchings(preds_candidates_property, criteria, sub
                     source = row['source']
                     target = row['target']
                     sim = row[col]
-                    if pairing == 'one-to-one':
-                        # idx.append(i)
-                        if (source not in sources) & (target not in targets):
-                            sources.append(source)
-                            targets.append(target)
-                            idx.append(i)
-                        if sim < thre:
-                            break
-                    elif pairing == 'one-to-many':
-                        if (source not in sources):
-                            sources.append(source)
-                            idx.append(i)
-                        if sim < thre:
-                            break
-                    elif pairing == 'many-to-many':
-                        if (source, target) not in st_pairs:
-                            st_pairs.append((source, target))
-                            idx.append(i)
-                        if sim < thre:
-                            break;
+                    if sim >= thre:
+                        if pairing == 'one-to-one':
+                            # idx.append(i)
+                            if (source not in sources) & (target not in targets):
+                                sources.append(source)
+                                targets.append(target)
+                                idx.append(i)
+                        elif pairing == 'one-to-many':
+                            if (source not in sources):
+                                sources.append(source)
+                                idx.append(i)
+                        elif pairing == 'many-to-many':
+                            if (source, target) not in st_pairs:
+                                st_pairs.append((source, target))
+                                idx.append(i)
+                    else:
+                        break;
 
-                aligns_ordered_selected = aligns_ordered.loc[idx][['source', 'target']]
+                #aligns_ordered_selected = aligns_ordered.loc[idx][['source', 'target']]
+                aligns_ordered_selected = aligns_ordered.loc[idx].reset_index(drop=True)
 
                 align = evaluate_noprint(aligns_ordered_selected, refs_url)
                 align['test_case']= subf
@@ -3585,7 +3595,12 @@ def refine_candidate_property_matchings(preds_candidates_property, criteria, sub
                 align['matching_pairing'] = pairing
                 align_cases.append(align)  
                 
-    return pd.DataFrame(align_cases).sort_values('precision', ascending=False)
+    return pd.DataFrame(align_cases).sort_values('precision', ascending=False), aligns_ordered_selected
+
+
+# remove duplicates in a list, keep the original order
+def remove_duplicates(aList):
+    return list(dict.fromkeys(aList))
 
 
 # Retrieve oboInOwl:hasRelatedSynonym

@@ -130,7 +130,76 @@ def compute_wds_uri_targets(slabel_clnd_uris, source_graph, tlabel_clnd_uris, ta
         logging.info("compute_wds_uri_targets(): average wd: {}".format(wd_total / count))
     
     return source_uri, sorted(source_targets_wds.items(), key=lambda kv: kv[1])        
+
+
+# mappings for concepts
+def ensemble_class_map(source_url, target_url, embs_model):
+    
+    logging.info("Python ensemble class mapper info: map " + source_url + " to " + target_url)
+    
+    OWL_NS = Namespace('http://www.w3.org/2002/07/owl#')
+    SKOS_NS = Namespace("http://www.w3.org/2004/02/skos/core#")
+    
+    source_graph = Graph()
+    source_graph.namespace_manager.bind("owl", OWL_NS)
+    source_graph.namespace_manager.bind("skos", SKOS_NS)
+
+    #source_graph.parse(source_url)
+    
+    stack_urls = []
+    stack_urls.append(source_url)
+    visited_urls = []
+    maponto.parse_owl_withImports(source_graph, stack_urls, visited_urls)
+    
+    logging.info("Read source with %s triples.", len(source_graph))
+
+    target_graph = Graph()
+    target_graph.namespace_manager.bind("owl", OWL_NS)
+    target_graph.namespace_manager.bind("skos", SKOS_NS)
+    
+    #target_graph.parse(target_url)
+    
+    stack_urls = []
+    stack_urls.append(target_url)
+    visited_urls = []
+    maponto.parse_owl_withImports(target_graph, stack_urls, visited_urls)
+    
+    logging.info("Read target with %s triples.", len(target_graph))
+    
+    
+    # initialize the final ensemble mappings
+    column_names = ["source", "source_label", "target", "target_label"]
+    ensemble_align = pd.DataFrame(columns = column_names)
+    
+    
+    # map concepts
+    logging.info("MAP CONCEPTS")
+    
+    slabel_uris = maponto.extract_label_uris(source_graph)
+    tlabel_uris = maponto.extract_label_uris(target_graph)
+
+    
+    slabel_clnd_uris = maponto.clean_labels(slabel_uris)
+    tlabel_clnd_uris = maponto.clean_labels(tlabel_uris)
         
+    max_len = len(slabel_clnd_uris)
+    if len(tlabel_clnd_uris) > max_len:
+        max_len = len(tlabel_clnd_uris)
+    if max_len < 1000:
+        concept_align = mapping_label_syn_jac_was_rest(slabel_clnd_uris, tlabel_clnd_uris, source_graph, target_graph, embs_model)
+        logging.info("TOTAL NUMBER OF MAPPINGS BETWEEN CONCPETS IS {}".format(len(concept_align)))
+        ensemble_align = pd.concat([ensemble_align, concept_align], 0)
+    else:
+        concept_align = mapping_label_syn_rest(slabel_clnd_uris, tlabel_clnd_uris, source_graph, target_graph, embs_model)
+        ensemble_align = pd.concat([ensemble_align, concept_align], 0)
+        logging.info("TOTAL NUMBER OF MAPPINGS BETWEEN CONCPETS IS {}".format(len(concept_align)))
+    
+    logging.info("=================================================")
+    
+   
+    return ensemble_align.reset_index(drop=True)  
+
+
         
 # combine mappings for concepts, object properties, and datatype properties
 def ensemble_map(source_url, target_url, embs_model):

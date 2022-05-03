@@ -468,6 +468,31 @@ def get_relatedWords_counts(topic, uri, label, clndLabel, rdfgraph, label_clnd_u
     
     return words
 
+# obtain lists of synonyms corresponding to each individual words in the phrase 
+def get_syn_lists(phrase, num_thred):
+    """
+        input: phrase: a string with multiple words
+               num_thred: number of synonyms to be considered
+        output: a list of lists of synonyms
+    """
+    ans = []
+    
+    words = phrase.split()
+    
+    for word in words:
+        synonyms = [word] # this word itself should be put in first a synonym.
+        for syn in wordnet.synsets(word, 'n'):
+            for synw in syn.lemma_names():
+                #clean_synw = synw
+                clean_synw = " ".join(maponto.clean_document_keepStops(synw))
+                if clean_synw not in synonyms and len(synonyms) < num_thred:
+                    synonyms.append(clean_synw)
+        
+        ans.append(synonyms)
+        
+    return ans
+
+
 
 # obtain phrases as combined synonyms from a phrase with multiple words
 def get_syn_phrases(phrase, num_thred):
@@ -482,7 +507,7 @@ def get_syn_phrases(phrase, num_thred):
     words = phrase.split()
     
     for word in words:
-        synonyms = []
+        synonyms = [word] # this word itself should be put in first a synonym.
         for syn in wordnet.synsets(word, 'n'):
             for synw in syn.lemma_names():
                 #clean_synw = synw
