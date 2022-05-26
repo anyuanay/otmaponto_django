@@ -250,6 +250,10 @@ def ensemble_map(source_url, target_url, embs_model):
     
     slabel_clnd_uris = maponto.clean_labels(slabel_uris)
     tlabel_clnd_uris = maponto.clean_labels(tlabel_uris)
+    
+    # Hacking: remove the labels that are too short?
+    slabel_clnd_uris = slabel_clnd_uris[slabel_clnd_uris.clndLabel.str.len()>3]
+    tlabel_clnd_uris = tlabel_clnd_uris[tlabel_clnd_uris.clndLabel.str.len()>3]
         
     max_len = len(slabel_clnd_uris)
     if len(tlabel_clnd_uris) > max_len:

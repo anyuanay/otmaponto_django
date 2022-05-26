@@ -500,7 +500,7 @@ def build_relation_graph(rdfGraph):
             edges.append((str(res[0]), 'rdfs:subClassOf', str(res[2])))
     
     return pd.DataFrame(edges, columns=['subject', 'predicate', 'object'])
- 
+
 
 # build a DataFrame containing the relation graph edges with properties from a RDF graph
 def build_relation_graph_edges_df(rdfGraph):
@@ -532,6 +532,53 @@ def build_relation_graph_edges_df(rdfGraph):
     # retrieve owl:equivalentClass edges
     current_edges = build_equivalentClass_edges(rdfGraph)
     edges = pd.concat([edges, current_edges]).reset_index(drop=True)
+    
+    # retrieve owl:allValuesFrom edges
+    current_edges = build_relations_allValuesFrom_edges(rdfGraph)
+    edges = pd.concat([edges, current_edges]).reset_index(drop=True)
+    
+    # retrieve rdfs:domain edges
+    current_edges = build_relations_asDomains_edges(rdfGraph)
+    edges = pd.concat([edges, current_edges]).reset_index(drop=True)
+    
+    # retrieve owl:maxCardinality edges
+    current_edges = build_relations_maxCardinality_edges(rdfGraph)
+    edges = pd.concat([edges, current_edges]).reset_index(drop=True)
+    
+    # retrieve owl:minCardinality edges
+    current_edges = build_relations_minCardinality_edges(rdfGraph)
+    edges = pd.concat([edges, current_edges]).reset_index(drop=True)
+    
+    # retrieve owl:someValuesFrom edges
+    current_edges = build_relations_someValuesFrom_edges(rdfGraph)
+    edges = pd.concat([edges, current_edges]).reset_index(drop=True)
+    
+    # retrieve rdfs:subClassOf edges
+    current_edges = build_subClassOf_edges(rdfGraph)
+    edges = pd.concat([edges, current_edges]).reset_index(drop=True)    
+    
+    return edges
+
+# build a DataFrame containing the relation graph edges with properties from a RDF graph
+# don't include comments, disjoint, equivalent relationships
+def build_relation_graph_edges_nocomments_df(rdfGraph):
+    """
+        input: rdfGraph: a RDF graph parsed by Graph().parse(url)
+        output: a DataFrame containing edges along with properties of 
+                the corresponding relation graph['subject', 'predicate', 'property', 'object']
+                'subject' and 'object' are uris; 'predicate' and 'property' may be strings.
+    """
+    
+    logging.info("build_relation_graph_edges_df(rdfGraph): Building a DataFrame containing the edges of a relation graph from the given RDF triple graph...")
+    
+    # prepare an empty DataFrame for holding the graph edges
+    edges = pd.DataFrame({'subject':[], 'predicate':[], \
+                            'property':[], 'object':[]})
+    
+    # retrieve owl:DataTypeProperty edges
+    current_edges = build_datatype_property_edges(rdfGraph)
+    edges = pd.concat([edges, current_edges]).reset_index(drop=True)
+    
     
     # retrieve owl:allValuesFrom edges
     current_edges = build_relations_allValuesFrom_edges(rdfGraph)
@@ -824,6 +871,11 @@ def compute_nn_candidates(subf, slabel_clnd_uris, tlabel_clnd_uris, source_graph
     '''
     all_results = []
 
+    # Hacking: remove the labels that are too short?
+    slabel_clnd_uris = slabel_clnd_uris[slabel_clnd_uris.clndLabel.str.len()>3]
+    tlabel_clnd_uris = tlabel_clnd_uris[tlabel_clnd_uris.clndLabel.str.len()>3]
+    
+    
     lab_align = match_label_features(slabel_clnd_uris, tlabel_clnd_uris, source_graph, 
                                          target_graph, embs_model)
     # store the evaluation results in a dictionary with precision:xx, recall:xx, f1:xx, etc
@@ -1099,6 +1151,10 @@ def compute_topn_candidates(subf, slabel_clnd_uris, tlabel_clnd_uris, source_gra
                
     '''
     all_results = []
+    
+    # Hacking: remove the labels that are too short?
+    slabel_clnd_uris = slabel_clnd_uris[slabel_clnd_uris.clndLabel.str.len()>3]
+    tlabel_clnd_uris = tlabel_clnd_uris[tlabel_clnd_uris.clndLabel.str.len()>3]
 
     lab_align = match_label_features(slabel_clnd_uris, tlabel_clnd_uris, source_graph, 
                                          target_graph, embs_model)
@@ -1343,6 +1399,12 @@ def evaluate(align_df, refs_rdf_path):
     """
     refs_df = load_alignments(refs_rdf_path, 'references')
     
+    align_df['source'] = align_df.source.str.lower()
+    align_df['target'] = align_df.target.str.lower()
+    
+    refs_df['source'] = refs_df.source.str.lower()
+    refs_df['target'] = refs_df.target.str.lower()
+    
     matched_df = align_df.merge(refs_df, how='inner', left_on=['source', 'target'], \
                                 right_on=['source', 'target'])
     
@@ -1367,6 +1429,12 @@ def evaluate_noprint(align_df, refs_rdf_path):
         output: a dictionary with the results such as precision, recall, f1-meaure
     """
     refs_df = load_alignments(refs_rdf_path, 'references')
+    
+    align_df['source'] = align_df.source.str.lower()
+    align_df['target'] = align_df.target.str.lower()
+    
+    refs_df['source'] = refs_df.source.str.lower()
+    refs_df['target'] = refs_df.target.str.lower()
     
     matched_df = align_df.merge(refs_df, how='inner', left_on=['source', 'target'], \
                                 right_on=['source', 'target'])
@@ -1498,6 +1566,103 @@ def get_clndLabel_word_count(label_clnd_uris, uri):
     
     return word_count
 
+# return all triples for all edges
+def get_all_triples(edges):
+    '''
+        input: 
+               edges: a DataFrame containing all relations from an ontology
+               ['subject', 'predicate', 'property', 'object']
+        output: a list of tuples representing the information of the triples 
+                
+    '''
+    ans = []
+    
+    # retrieve all relations
+    relations = edges
+    # row[0]: subject, row[1]: predicate, row[2]: property, row[3]:object
+    for _, row in relations.iterrows():
+        # 1. for rdfs:comment, add the comments string as a single element in a tuple
+        if row[1] == 'rdfs:comment':
+            if len(clean_extract_label_from_uri(row[3])) > 0:
+                t = (clean_extract_label_from_uri(row[3]), )
+                ans.append(t)
+        
+        # 2. for row[1] = owl:disjointWith, add (cleaned_subject, 'disjoint different', cleaned_object)
+        if row[1] == 'owl:disjointWith':
+            t = (clean_extract_label_from_uri(row[0]), 'disjoint', 
+                        clean_extract_label_from_uri(row[3]))
+            if t not in ans:
+                ans.append(t)
+                
+        # 3. for row[1] = owl:equivalentClass, 
+        # add (cleaned_object, )
+        if row[1] == 'owl:equivalentClass':
+            t = (clean_extract_label_from_uri(row[3]), )
+            if t not in ans:
+                ans.append(t)
+                
+        # 4. for row[2]='owl:DataTypeProperty', 
+        # add (cleaned_subject, cleaned_datatypePredicate, cleaned_object)
+        if row[2] == 'owl:DataTypeProperty':
+            t = (clean_extract_label_from_uri(row[0]), 
+                        clean_extract_label_from_uri(row[1]),
+                        clean_extract_label_from_uri(row[3]))
+            if t not in ans:
+                ans.append(t)
+                
+        # 5. for row[2] = 'owl:allValuesFrom' or 'owl:someValuesFrom'
+        # add (cleaned_subject, cleaned_predicate, cleaned_object)
+        if (row[2] == 'owl:allValuesFrom') | (row[2] == 'owl:someValuesFrom'):
+            t = (clean_extract_label_from_uri(row[0]), 
+                        clean_extract_label_from_uri(row[1]),
+                        clean_extract_label_from_uri(row[3]))
+            if t not in ans:
+                ans.append(t)
+                
+        # 6. for row[2] = 'rdfs:domain'
+        # add (cleaned_subject, 'domain', cleaned_predicate, cleaned_object)
+        if row[2] == 'rdfs:domain':
+            t = (clean_extract_label_from_uri(row[0]),
+                        'domain',
+                        clean_extract_label_from_uri(row[1]),
+                        clean_extract_label_from_uri(row[3]))
+            if t not in ans:
+                ans.append(t)
+                
+        # 7. for row[2] = 'owl:maxCardinality'
+        # add (cleaned_subject, 'maximum', cleaned_predicate, object)
+        if row[2] == 'owl:maxCardinality':
+            t = (clean_extract_label_from_uri(row[0]),
+                        'maximum',
+                        clean_extract_label_from_uri(row[1]),
+                        clean_extract_label_from_uri(str(row[3])))
+            if t not in ans:
+                ans.append(t)
+                
+        # 8. for row[2] = 'owl:minCardinality'
+        # add (cleaned_subject, 'minimum', cleaned_predicate, object)
+        if row[2] == 'owl:minCardinality':
+            t = (clean_extract_label_from_uri(row[0]),
+                        'minimum',
+                        clean_extract_label_from_uri(row[1]),
+                        clean_extract_label_from_uri(str(row[3])))
+            if t not in ans:
+                ans.append(t)
+                
+        # 9. for row[1] = 'rdfs:subClassOf'
+        # add (cleaned_subject, 'child', cleaned_object) if cleaned_object != Thing
+        # otherwise, add (cleaned_subject, )
+        if row[1] == 'rdfs:subClassOf':
+            t = (clean_extract_label_from_uri(row[0]),
+                        'child',
+                        clean_extract_label_from_uri(row[3]))
+            if t not in ans:
+                ans.append(t)
+        
+        
+    return ans
+
+
 def get_context_triples(uri, edges):
     '''
         input: uri: an uri of an concept in an ontology
@@ -1514,8 +1679,9 @@ def get_context_triples(uri, edges):
     for _, row in relations.iterrows():
         # 1. for rdfs:comment, add the comments string as a single element in a tuple
         if row[1] == 'rdfs:comment':
-            t = (clean_extract_label_from_uri(row[3]), )
-            ans.append(t)
+            if len(clean_extract_label_from_uri(row[3])) > 0:
+                t = (clean_extract_label_from_uri(row[3]), )
+                ans.append(t)
         
         # 2. for row[1] = owl:disjointWith, add (cleaned_subject, 'disjoint different', cleaned_object)
         if row[1] == 'owl:disjointWith':
@@ -1621,17 +1787,20 @@ def get_context_triples(uri, edges):
         # 4. for row[1] = 'rdfs:subClassOf'
         # add (cleaned_object, 'parent', cleaned_subject) 
         if row[1] == 'rdfs:subClassOf':
-            t = (clean_extract_label_from_uri(row[3]),
+            if len(clean_extract_label_from_uri(row[3])) >0 and len(clean_extract_label_from_uri(row[0])) > 0:
+                t = (clean_extract_label_from_uri(row[3]),
                         'parent',
                         clean_extract_label_from_uri(row[0]))
-            if t not in ans:
-                ans.append(t)
+                if t not in ans:
+                    ans.append(t)
                 
     # if the uri is an isolcated concept, add the concept as a singleton
     if len(ans) == 0:
         ans.append((clean_extract_label_from_uri(uri), ))
         
     return ans
+
+
 
 
 # Given a uri, retrieve the individual words with counts in its 
@@ -2921,21 +3090,28 @@ def parse_owl_withImports(graph, stack_urls, visited_urls):
     
     try:
         graph.parse(url, format='xml')
-    
-        q = """
-        SELECT ?o ?s
-        WHERE {
-            ?o owl:imports  ?s.
-        }
-        """
-
-        # Apply the query to get all owl:imports sources
-        for r in graph.query(q):
-            imported_url = r[1].toPython()
-            if (imported_url not in stack_urls) and (imported_url not in visited_urls):
-                stack_urls.append(imported_url)
-    except:
+    except Exception as e:
         logging.info("parse_owl_withImports: graph.prase(): an exception occured.")
+        print(e)
+        
+        slash_idx = url.rindex('/')
+        url_local = "../data/MSE-Benchmark/testCases/thirdTestCase/" + url[slash_idx+1:] + ".owl"
+        logging.info("graph.parse(ur_loca) uses a locally stored file: {}".format(url_local))
+        graph.parse(url_local)
+    
+    q = """
+    SELECT ?o ?s
+    WHERE {
+        ?o owl:imports  ?s.
+    }
+    """
+
+    # Apply the query to get all owl:imports sources
+    for r in graph.query(q):
+        imported_url = r[1].toPython()
+        if (imported_url not in stack_urls) and (imported_url not in visited_urls):
+            stack_urls.append(imported_url)
+   
     
     parse_owl_withImports(graph, stack_urls, visited_urls)
     
