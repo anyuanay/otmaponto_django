@@ -1405,6 +1405,8 @@ def evaluate(align_df, refs_rdf_path):
     refs_df['source'] = refs_df.source.str.lower()
     refs_df['target'] = refs_df.target.str.lower()
     
+    align_df = align_df[['source', 'target']].drop_duplicates()
+    
     matched_df = align_df.merge(refs_df, how='inner', left_on=['source', 'target'], \
                                 right_on=['source', 'target'])
     
@@ -1435,6 +1437,8 @@ def evaluate_noprint(align_df, refs_rdf_path):
     
     refs_df['source'] = refs_df.source.str.lower()
     refs_df['target'] = refs_df.target.str.lower()
+    
+    align_df = align_df[['source', 'target']].drop_duplicates()
     
     matched_df = align_df.merge(refs_df, how='inner', left_on=['source', 'target'], \
                                 right_on=['source', 'target'])
