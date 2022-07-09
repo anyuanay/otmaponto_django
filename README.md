@@ -1,6 +1,6 @@
-# Django OTMapOnto OAEI 2021
-This repository contains the sources and results of the ontology matching 
-tool, OTMaponto, participating in OAEI 2021. The tool is wrapped as a Web service implemented in Django+Gunicorn+Nginx
+# Django OTMapOnto
+This repository contains the sources of the ontology matching 
+tool, OTMaponto, and the results of participating in OAEI 2021. The tool is wrapped as a Web service implemented in Django+Gunicorn+Nginx
 
 ## Installation Instructions
 * OS: Ubuntu LTS 20.04
