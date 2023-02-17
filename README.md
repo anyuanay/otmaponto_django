@@ -28,7 +28,7 @@ https://dl.fbaipublicfiles.com/fasttext/vectors-english/crawl-300d-2M-subword.zi
 
 **step 10**: Run 'sudo systemctl start gunicorn.service'. Since the Django application needs to load the fasttext pre-trained model, the gunicorn service may take about 10-15 mins to be ready.
 
-**step 11**: Install Nginx by 'sudo apt install nginx'.
+**step 11**: Install Nginx by 'sudo apt install nginx'. Before installing nginx, run 'sudo apt purge nginx nginx-full'.
 
 **step 12**: Run 'sudo cp etc.nginx.sites-available.otmaponto /etc/nginx/sites-available/otmaponto'
 
