@@ -37,11 +37,12 @@ https://dl.fbaipublicfiles.com/fasttext/vectors-english/crawl-300d-2M-subword.zi
 **step 14**: Run 'sudo ln -s /etc/nginx/sites-available/otmaponto /etc/nginx/sites-enabled/'
 
 **step 15**: Create a 'logs' subfolder under ~/django by 'mkdir logs'
+**step 16**: Change the user name in /etc/nginx/nginx.conf on the first line from www-data to ubuntu.
 
-**step 16**: Start nginx server by 'sudo systemctl start nginx'
+**step 17**: Start nginx server by 'sudo systemctl start nginx'
 
-**step 17**: Access the matching service from a browser: http://\<your ip\>/match
+**step 18**: Access the matching service from a browser: http://\<your ip\>/match
   
-**step 18**: Web service endpoint: http://\<your ip\>/match/runmatcher_web_file .
+**step 19**: Web service endpoint: http://\<your ip\>/match/runmatcher_web_file .
 
 
